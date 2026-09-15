@@ -1,0 +1,24 @@
+# sc configuration — private by default.
+# Grant only what you explicitly list here; everything else stays in the vault.
+# Exact vault-relative paths only: no globs, no '..', no '.git'.
+# Check with `sc doctor`; apply with `sc sync` (add --initialize once for new pairs).
+
+[vault]
+repo = "OWNER/VAULT"            # your private vault repository
+# branch = "main"              # optional; defaults to "main"
+
+[collaborators.example]
+repo = "OWNER/COLLABORATOR"    # the collaborator's own shared repository
+# branch = "main"
+include = [
+    "Projects/Example.md",
+]
+
+# Optional additive grants: share additional whole files with listed
+# collaborators without editing each block.
+# [[shares]]
+# paths = ["Projects/Another.md"]
+# to = ["example"]
+
+[sync]                         # entirely optional
+interval = 900                 # `sc watch` poll interval in seconds (>= 60)

@@ -1,0 +1,15 @@
+# Optional systemd user service: local automation instead of GitHub Actions.
+# Copy to ~/.config/systemd/user/sc-watch.service, adjust the config path, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now sc-watch
+[Unit]
+Description=Shared context sync (sc watch)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/sc watch --config %h/sc-config/sharing.toml
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

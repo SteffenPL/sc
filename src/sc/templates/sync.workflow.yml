@@ -1,0 +1,34 @@
+# Installed by `sc workflow install`; do not edit the placeholders by hand.
+# The trusted private config repo is cloned for sharing rules; the sync
+# engine (`sc`) is preinstalled on the runner host. Keep exactly one sync host.
+name: Sync shared context
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: shared-context-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, sc-sync]
+    timeout-minutes: 20
+    steps:
+      - name: Run trusted sync
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          git clone --quiet --depth 1 --branch __SC_CONFIG_BRANCH__ __SC_CONFIG_REPO__ "$work"
+          sc sync --config "$work/__SC_CONFIG_FILE__"
