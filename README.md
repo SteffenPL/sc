@@ -1,17 +1,16 @@
 # sc
 
 Sync parts of a private vault — Obsidian, knowledge base, notes — with
-collaborator repos. Built mainly for **shared agent context**: you and your
-collaborator (person or AI agent) each commit to your own repo, and the
-explicitly granted files stay in sync, both directions, directly on `main`.
+collaborator repos. Built for **shared agent context**: you and a
+collaborator — person or AI agent — each edit your own repo; granted files
+sync both ways on `main`.
 
 - private by default — only granted paths sync; whole files, never history
 - concurrent edits auto-merge; conflicts freeze with review PRs on both sides
 - plain TOML config; stdlib-only Python 3.11+; needs git + gh
 - replaces [Copybara](https://github.com/google/copybara) for this use case:
   no Java/Bazel, no generated Starlark
-- **one sync host per vault** — local install, Docker, or Actions runner;
-  never two against the same repositories
+- one sync host — don't run two parallel sync services
 
 ## Quick start
 
@@ -51,10 +50,10 @@ maps = ["maya", "kai"]
 interval = 300                    # sc watch poll, seconds (>= 60)
 ```
 
-- `[[maps]]` = folder-level routing between two repos; the path suffix is a
-  prefix, stripped from that side and added to the other.
-- `[[permissions]]` = the only grants. Globs pre-consent whole folders:
-  files created later by **either** side sync automatically. Preview with
+- `[[maps]]` pairs two repos. A path suffix is a folder prefix:
+  stripped on one side, added on the other.
+- `[[permissions]]` define what syncs — nothing else moves. Globs grant
+  whole folders: new files from either side sync automatically. Check with
   `sc sync --dry-run`.
 - defaults: `merge = "text"`, `conflict = "swap"`, `bi_directional = true`;
   `bi_directional = false` = one-way mirror (source overwrites target).
@@ -68,12 +67,11 @@ interval = 300                    # sc watch poll, seconds (>= 60)
 | one-sided change (add/edit/delete) | propagates both ways |
 | concurrent edits, clean hunks | 3-way auto-merge |
 | overlapping text edits | union-merge when `merge = "union"`, else conflict |
-| conflict (binary, mode, modify/delete, overlap without union) | freeze: each main keeps its own version; review PR on **both** repos; merge one → next sync converges both and auto-closes the other |
+| conflict (binary, mode, modify/delete, overlap without union) | files freeze — each repo keeps its version and gets a review PR; merge one, the next sync does the rest |
 
-- normal pushes only — no force, no history rewrites; failed runs converge on rerun
+- regular pushes only; safe to rerun after failures
 - baselines: private `sync-state/<map>` branches on the `from` repo
-- incoming files never checked out or executed — object-level Git only,
-  temp dir deleted per run
+- incoming files are never checked out or executed; the sync host keeps no file copies
 
 ## Commands
 
@@ -98,9 +96,9 @@ sc runner install      # register this machine as a runner (sudo for the service
 sc workflow install --config-repo https://github.com/you/sc-config.git
 ```
 
-The workflow triggers on vault pushes plus a 15-minute schedule, clones the
-trusted private config repo, and runs the pinned `sc` (labels: `sc-sync`).
-Local alternative to a runner: `sc watch` via the systemd unit template.
+Runs on vault pushes and every 15 minutes. The runner clones your private
+config repo and runs the pinned `sc`. Prefer no Actions at all? Run
+`sc watch` yourself (systemd template included).
 
 ## Docker
 
@@ -110,8 +108,8 @@ export GH_TOKEN=<fine-grained PAT: contents rw + PR create/list>
 docker compose up -d    # runs sc watch; mount config at /config/sc.toml
 ```
 
-`GH_TOKEN` is the only secret; the container is stateless — baselines live in
-the repositories. Either local install, Docker, or runner — never two.
+`GH_TOKEN` is the only secret. Baselines live in the repos, so the container
+is stateless. Don't run two parallel sync services.
 
 ## Development
 
