@@ -29,24 +29,31 @@ def resolve_config(argument):
     return path
 
 
-def list_prs(repo, branch):
-    return json.loads(engine.gh('pr', 'list', '--repo', repo, '--state', 'open',
-                                 '--base', branch, '--limit', '1000',
-                                 '--json', 'url,number,title,headRefName'))
-
-
-def run_sync(config_path, initialize=False):
-    """Sync every configured collaborator under the host lock. True on failure."""
+def load_specs(path):
+    """Load and resolve map specs, or print errors and return None."""
     try:
-        settings = config.load(config_path)
+        settings = config.load(path)
     except (OSError, ValueError) as error:
-        print(f'Cannot read config {config_path}: {error}', file=sys.stderr)
-        return True
+        print(f'Cannot read config {path}: {error}', file=sys.stderr)
+        return None
     errors = config.validate(settings)
     if errors:
         print('Invalid configuration:', file=sys.stderr)
         for error in errors:
             print(f'- {error}', file=sys.stderr)
+        return None
+    return config.resolve_maps(settings)
+
+
+def list_prs(repo):
+    return json.loads(engine.gh('pr', 'list', '--repo', repo, '--state', 'open',
+                                 '--limit', '1000', '--json', 'url,number,title,headRefName'))
+
+
+def run_sync(config_path, initialize=False, dry_run=False):
+    """Sync every configured map under the host lock. True on failure."""
+    specs = load_specs(config_path)
+    if specs is None:
         return True
     os.umask(0o077)
     report, conflicts_total, failed = [], 0, False
@@ -57,29 +64,34 @@ def run_sync(config_path, initialize=False):
         except BlockingIOError:
             print('Another sc sync already runs on this host.', file=sys.stderr)
             return True
-        for name in settings['collaborators']:
+        for spec in specs:
             try:
                 with tempfile.TemporaryDirectory(prefix='sync-', dir=directory) as tmp:
-                    line, conflicts = engine.sync_one(settings, name, Path(tmp), initialize)
-                    report.append(line)
-                    conflicts_total += conflicts
+                    result = engine.sync_one(spec, Path(tmp), initialize, dry_run)
+                    report.append(result['report'])
+                    conflicts_total += result['conflicts']
             except (ValueError, RuntimeError, subprocess.CalledProcessError) as error:
                 # Do not publish command output or private paths to Actions logs.
-                report.append(f'{name}: FAILED ({type(error).__name__}); see private sync-error.log.')
+                report.append(f'{spec["name"]}: FAILED ({type(error).__name__}); '
+                              'see private sync-error.log.')
                 with (directory / 'sync-error.log').open('a') as log:
                     log.write(str(error) + '\n')
                     if isinstance(error, subprocess.CalledProcessError):
                         log.write((error.stderr or b'').decode(errors='replace') + '\n')
                 failed = True
         try:
-            vault = settings['vault']
-            prs = list_prs(vault['repo'], vault.get('branch', 'main'))
-            report.append('Vault PRs needing attention:')
-            report.extend(f'- #{pr["number"]}: {pr["url"]}' for pr in prs)
-            if not prs:
-                report.append('- None')
+            repos = sorted({spec['from']['repo'] for spec in specs} |
+                           {spec['to']['repo'] for spec in specs})
+            open_prs = [(repo, list_prs(repo)) for repo in repos]
+            with_prs = [(repo, prs) for repo, prs in open_prs if prs]
+            if with_prs:
+                report.append('PRs needing attention:')
+                for repo, prs in with_prs:
+                    report.extend(f'- [{repo}] #{pr["number"]}: {pr["url"]}' for pr in prs)
+            else:
+                report.append('PRs needing attention: none.')
         except subprocess.CalledProcessError:
-            report.append('FAILED to list vault PRs.')
+            report.append('FAILED to list PRs.')
             failed = True
     record = {'time': datetime.now(timezone.utc).isoformat(timespec='seconds'),
               'ok': not failed, 'conflicts': conflicts_total, 'results': report}
@@ -108,11 +120,15 @@ def _row(label, value=''):
     print(f'{label:<10}{value}')
 
 
+def _location(side):
+    return side['repo'] + (f'/{side["prefix"]}' if side['prefix'] else '')
+
+
 def cmd_sync(args):
     path = resolve_config(args.config)
     if path is None:
         return 2
-    return int(run_sync(path, args.initialize))
+    return int(run_sync(path, args.initialize, args.dry_run))
 
 
 def cmd_watch(args):
@@ -162,37 +178,41 @@ def cmd_status(args):
     for error in errors:
         _row('', f'- {error}')
     if not errors:
-        vault = settings['vault']
-        branch = vault.get('branch', 'main')
-        vault_url = engine.repo_url(vault['repo'])
-        tip = _tip(vault_url, branch)
-        _row('Vault', f'{vault["repo"]} ({branch}) ' +
-             (f'@ {tip}' if tip else '— unreachable (credentials? branch?)'))
-        prs = None
+        specs = config.resolve_maps(settings)
+        prs_by_repo = {}
         try:
-            prs = list_prs(vault['repo'], branch)
+            repos = sorted({spec['from']['repo'] for spec in specs} |
+                           {spec['to']['repo'] for spec in specs})
+            prs_by_repo = {repo: list_prs(repo) for repo in repos}
         except subprocess.CalledProcessError:
             _row('PRs', 'gh unavailable — run `gh auth login`')
-        if prs is not None:
-            _row('PRs', f'{len(prs)} open vault PR(s)' + ('' if prs else ' — none need attention'))
-        for name, entry in settings['collaborators'].items():
-            external_branch = entry.get('branch', 'main')
-            external_tip = _tip(engine.repo_url(entry['repo']), external_branch)
-            _row(name, f'{entry["repo"]} ({external_branch}) ' +
-                 (f'@ {external_tip}' if external_tip else '— unreachable'))
-            granted = len(config.allowed_paths(settings, name))
-            prefix = entry.get('prefix')
-            baseline = _tip(vault_url, f'sync-state/{name}')
-            details = [f'{granted} granted path(s)' + (f' under {prefix}/' if prefix else ''),
-                       f'baseline sync-state/{name}: ' + (f'@ {baseline}' if baseline else 'MISSING')]
+        for spec in specs:
+            source, target = spec['from'], spec['to']
+            for side in (source, target):
+                tip = _tip(engine.repo_url(side['repo']), side['branch'])
+                _row(spec['name'], f'{_location(side)} ({side["branch"]}) ' +
+                     (f'@ {tip}' if tip else '— unreachable'))
+            baseline = _tip(engine.repo_url(source['repo']), f'sync-state/{spec["name"]}')
+            details = [f'{len(spec["patterns"])} path pattern(s)',
+                       f'baseline sync-state/{spec["name"]}: ' +
+                       (f'@ {baseline}' if baseline else 'MISSING')]
             if baseline is None:
                 details.append('new pair? `sc sync --initialize`; lost state? restore the branch')
-            if prs is not None:
-                review = [pr for pr in prs
-                          if str(pr.get('headRefName', '')).startswith(f'sync-review/{name}/')]
-                details.append(f'{len(review)} open review PR(s)'
-                               + (f', e.g. #{review[0]["number"]}' if review else ''))
-            _row('', ' · '.join(details))
+            if prs_by_repo:
+                for side in (source, target):
+                    review = [pr for pr in prs_by_repo.get(side['repo'], [])
+                              if str(pr.get('headRefName', '')).startswith(
+                                  f'sync-review/{spec["name"]}/')]
+                    if review:
+                        details.append(f'{len(review)} open review PR(s) on {side["repo"]}, '
+                                       f'e.g. #{review[0]["number"]}')
+            mode = ('one-way' if not spec['bi_directional'] else
+                    f'merge={spec["merge"]}, conflict={spec["conflict"]}')
+            _row('', ' · '.join(details) + f' · {mode}')
+        if prs_by_repo:
+            total = sum(len(prs) for prs in prs_by_repo.values())
+            _row('PRs', f'{total} open PR(s) across mapped repositories'
+                 + ('' if total else ' — none need attention'))
     directory = state_dir()
     try:
         with (directory / 'sync.lock').open('w') as lock:
@@ -253,8 +273,17 @@ def cmd_doctor(args):
         check(f'config {path}', False, 'file not found')
     else:
         try:
-            errors = config.validate(config.load(path))
+            settings = config.load(path)
+            errors = config.validate(settings)
             check(f'config {path}', not errors, 'valid' if not errors else '; '.join(errors[:3]))
+            if not errors:
+                for spec in config.resolve_maps(settings):
+                    mode = ('one-way' if not spec['bi_directional'] else
+                            f'merge={spec["merge"]}, conflict={spec["conflict"]}')
+                    note = '' if spec['patterns'] else ' (no permissions granted yet)'
+                    print(f'       map {spec["name"]}: {_location(spec["from"])} <-> '
+                          f'{_location(spec["to"])}, {len(spec["patterns"])} pattern(s), '
+                          f'{mode}{note}')
         except (OSError, ValueError) as error:
             check(f'config {path}', False, str(error))
     try:
@@ -272,26 +301,23 @@ def cmd_prs(args):
     path = resolve_config(args.config)
     if path is None:
         return 2
-    try:
-        settings = config.load(path)
-    except (OSError, ValueError) as error:
-        print(f'Cannot read config {path}: {error}', file=sys.stderr)
+    specs = load_specs(path)
+    if specs is None:
         return 1
-    vault = settings.get('vault', {})
-    if not vault.get('repo'):
-        print('Config has no [vault] repo.', file=sys.stderr)
-        return 1
+    total = 0
     try:
-        prs = list_prs(vault['repo'], vault.get('branch', 'main'))
+        for repo in sorted({spec['from']['repo'] for spec in specs} |
+                           {spec['to']['repo'] for spec in specs}):
+            prs = list_prs(repo)
+            for pr in prs:
+                print(f'[{repo}] #{pr["number"]}: {pr["title"]}')
+                print(f'  {pr["url"]}')
+            total += len(prs)
     except subprocess.CalledProcessError:
-        print('Failed to list vault PRs (gh authenticated?).', file=sys.stderr)
+        print('Failed to list PRs (gh authenticated?).', file=sys.stderr)
         return 1
-    if not prs:
-        print('No open vault PRs.')
-        return 0
-    for pr in prs:
-        print(f'#{pr["number"]}: {pr["title"]}')
-        print(f'  {pr["url"]}')
+    if not total:
+        print('No open PRs in mapped repositories.')
     return 0
 
 
@@ -339,11 +365,13 @@ def build_parser():
     parser.add_argument('--version', action='version', version=f'sc {__version__}')
     sub = parser.add_subparsers(dest='command', metavar='COMMAND')
 
-    sync = sub.add_parser('sync', help='sync every configured collaborator once')
+    sync = sub.add_parser('sync', help='sync every configured map once')
     sync.add_argument('-c', '--config', type=Path, default=None)
     sync.add_argument('--initialize', action='store_true',
                       help='allow an empty baseline for new pairs; '
                       'may restore previously deleted files')
+    sync.add_argument('--dry-run', action='store_true',
+                      help='report what would happen without pushing or opening PRs')
     sync.set_defaults(func=cmd_sync)
 
     watch = sub.add_parser('watch', help='run sync in a loop')
@@ -360,7 +388,7 @@ def build_parser():
     doctor.add_argument('-c', '--config', type=Path, default=None)
     doctor.set_defaults(func=cmd_doctor)
 
-    prs = sub.add_parser('prs', help='list open vault PRs needing attention')
+    prs = sub.add_parser('prs', help='list open PRs in mapped repositories')
     prs.add_argument('-c', '--config', type=Path, default=None)
     prs.set_defaults(func=cmd_prs)
 
@@ -376,7 +404,7 @@ def build_parser():
                               ('status', 'show local runner state')):
         subparser = runner_sub.add_parser(action, help=help_text)
         if action != 'status':
-            subparser.add_argument('--repo', help='GitHub repo (default: vault from config)')
+            subparser.add_argument('--repo', help='GitHub repo (default: from side of the first map)')
         subparser.add_argument('--dir', help='runner directory '
                            '(default ~/.local/share/sc/runner)')
         if action != 'status':
@@ -393,7 +421,7 @@ def build_parser():
 
     workflow = sub.add_parser('workflow', help='manage the vault sync workflow')
     workflow_sub = workflow.add_subparsers(dest='action', required=True)
-    workflow_install = workflow_sub.add_parser('install', help='install the workflow into the vault repo')
+    workflow_install = workflow_sub.add_parser('install', help='install the workflow into a mapped repo')
     workflow_install.add_argument('--config-repo', required=True,
                                   help='URL of the trusted private config repo to clone')
     workflow_install.add_argument('--config-branch', default='main')

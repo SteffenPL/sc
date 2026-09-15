@@ -1,14 +1,14 @@
 # sc — shared context
 
-Allowlisted **bidirectional sync** between a private Git vault and collaborator
-repos. Private by default: only files explicitly granted in a TOML config ever
-leave the vault, and only file contents — never private history — are shared.
+Allowlisted **bidirectional sync** between mapped Git repositories. Private by
+default: only files granted in a TOML config ever sync, and only file
+contents — never private history — are shared.
 
-Both sides commit directly to `main`. One-sided changes and clean concurrent
-text edits propagate in both directions. On a nontrivial conflict the
-collaborator's file state wins and the vault alternative is preserved in a
-private vault PR for review; merging that PR sends the resolution back to the
-collaborator on the next sync.
+A **map** pairs two repositories (each optionally under a folder prefix that
+is stripped/added per side). A **permission** grants path patterns through a
+named map. Both sides commit directly to their default branch; one-sided
+changes and clean concurrent text edits propagate both ways, and conflicts
+freeze with review PRs on **both** sides.
 
 Keep configuration and credentials inaccessible to collaborators, and use
 exactly **one sync host** (one machine, VM or runner) per vault.
@@ -28,7 +28,7 @@ standard library only; uv provides a suitable Python automatically.
 ## Install
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.2.0
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.3.0
 uv tool update-shell     # ensure ~/.local/bin is on PATH, if needed
 ```
 
@@ -41,7 +41,7 @@ uvx --from git+https://github.com/SteffenPL/sc.git sc status
 
 ```sh
 sc init                    # writes an annotated sc.toml
-$EDITOR sc.toml            # define your vault, collaborators and granted paths
+$EDITOR sc.toml            # define maps, permissions, granted paths
 sc doctor                  # verify prerequisites and the config
 sc sync --initialize       # first run for a NEW pair (no baseline yet)
 sc status                  # read-only report
@@ -55,7 +55,7 @@ sc watch                   # keep syncing every 15 minutes
 | `sc init [PATH]` | write a commented configuration template (default `./sc.toml`) |
 | `sc doctor [-c F]` | check python/git/gh, authentication, config and state dir |
 | `sc status [-c F]` | read-only report: branch tips, baselines, PRs, lock, last run |
-| `sc sync [-c F] [--initialize]` | sync every configured collaborator once |
+| `sc sync [-c F] [--initialize] [--dry-run]` | sync every configured map once; `--dry-run` previews without pushing |
 | `sc watch [-c F] [-i SECONDS]` | run `sc sync` in a loop (default every 900s) |
 | `sc prs [-c F]` | list open vault PRs needing attention |
 | `sc runner install\|remove\|status` | manage a self-hosted Actions runner |
@@ -69,66 +69,74 @@ Config resolution: `--config`/`-c` > `$SC_CONFIG` > `./sc.toml` > `./sharing.tom
 ## Configuration
 
 ```toml
-[vault]
-repo = "OWNER/VAULT"                 # your private vault repository
-# branch = "main"                   # optional; defaults to "main"
+[[maps]]
+name = "jenny"                                # unique; names sync-state/jenny
+from = "OWNER/VAULT"                          # prefix "" (repository root)
+to   = "OWNER/COLLABORATOR"                   # files appear at their vault paths
 
-[collaborators.jenny]
-repo = "OWNER/COLLABORATOR"        # the collaborator's shared repository
-include = [                          # exact vault-relative paths only
+[[maps]]
+name = "joi"
+from = "OWNER/VAULT"                          #   .../Projects/Henkaku Duties.md
+to   = "OWNER/SC-JOI/steffen-notes"          # ↔ .../steffen-notes/Projects/Henkaku Duties.md
+merge = "union"                               # opt-in union auto-merge (see below)
+
+[[permissions]]
+repo = "OWNER/VAULT"                          # optional context for relative paths
+paths = [
     "Projects/Diet.md",
+    "Projects/Mums birthday.md",
+    "{Projects,Views}/*",                     # globs: '*' one segment, '**' any depth
 ]
+maps = ["jenny"]
 
-[collaborators.joi]
-repo = "OWNER/SC-JOI"
-prefix = "steffen-notes"             # optional: all granted files appear under
-include = ["Projects/Henkaku Duties.md"]  # steffen-notes/... in the collaborator repo
+[[permissions]]
+repo = "OWNER/VAULT"
+paths = ["Projects/Henkaku Duties.md"]
+maps = ["joi"]
 
-[collaborators.bob]
-repo = "ORG/BOB-SHARED"
-include = ["Projects/Bob Project.md"]
-
-# Optional additive grants: extra whole files for listed collaborators.
-# A collaborator's effective set = its include + every matching [[shares]].
-[[shares]]
-paths = ["Projects/Example.md"]
-to = ["jenny", "bob"]
-
-[sync]                              # entirely optional
-interval = 900                       # `sc watch` poll interval, seconds (>= 60)
+[sync]                                        # entirely optional
+interval = 900                                 # `sc watch` poll interval, seconds (>= 60)
 ```
+
+- **Maps** are folder-level routing: `from`/`to` are `Owner/Repo[/folder...]`;
+  the folder prefix is stripped from that side's paths and added to the other
+  side's outgoing files, so `A/prefix_a/x.md` maps to `B/prefix_b/x.md`.
+  Defaults: `from_branch`/`to_branch` = `main`, `merge = "text"`,
+  `conflict = "swap"`, `bi_directional = true`.
+- **Permissions** are the grants — a map shares nothing by itself. Paths may
+  anchor on either endpoint of a named map. Globs (`*`, `**`, `{a,b}`) are
+  folder-level pre-consent: files later created under them by either side
+  sync automatically. Preview the expanded matches with `sc sync --dry-run`.
+- Paths and prefixes reject `..`, `.git`, globs-in-prefixes and absolute
+  paths; validation errors stop sync before anything is pushed.
 
 Managing the map:
 
 | Operation | How |
 | --- | --- |
-| Add collaborator | Add a `[collaborators.<name>]` block; run `sc sync --initialize` once (new pair has no baseline) |
-| Remove collaborator | Set `include = []`, drop `[[shares]]` grants to them, run `sc sync` (removes shared files from their repo), then delete the block |
-| Grant a file | Add the path to `include`, or add a `[[shares]]` entry |
-| Revoke a file | Remove it from `include`/`shares`; the next sync deletes it from the collaborator repo |
+| Add a pair | Add a `[[maps]]` entry + permissions; run `sc sync --initialize` once (no baseline yet) |
+| Stop sharing someone | Remove their permissions, run `sc sync` (their side drops previously shared files), then remove the map |
+| Grant a file | Add the path to a permission for that map (or a glob) |
+| Revoke a file | Remove it from the permission; next sync removes it from the other side (your side keeps it; old copies can't be taken back) |
 
-Rules are strict on purpose: exact paths only — globs, `..`, `.git` and
-absolute paths are rejected. Files are shared whole, not redacted; revocation
-cannot erase old history or downloaded copies.
-
-Path mapping: without `prefix`, a granted vault path appears at the same path
-in the collaborator repo. With `prefix`, it appears at `<prefix>/<vault path>`
-— useful to mirror your whole vault namespace inside a collaborator repo.
-Baselines and recovery state stay keyed by vault path. **Caution:** adding or
-changing `prefix` on an *existing* pair makes the mapped paths look deleted on
-the collaborator side, which propagates deletions to your vault — first move
-the files to the new prefix inside the collaborator repo (same content), then
-change the config.
+Rules are strict on purpose. Files are shared whole, not redacted; revocation
+cannot erase old history or downloaded copies. Changing a side's folder prefix
+on an existing map requires moving the files there first (same content), or
+they read as deletions.
 
 ## `sc status` example
 
 ```
 $ sc status
 Config    /home/you/sc-config/sharing.toml — valid
-Vault     OWNER/VAULT (main) @ 7c3f1ab
-PRs       1 open vault PR(s)
-jenny     OWNER/COLLABORATOR (main) @ 9a2d4e0
-          1 granted path(s) · baseline sync-state/jenny: @ 7c3f1ab · 1 open review PR(s), e.g. #2
+jenny     OWNER/VAULT (main) @ 7c3f1ab
+          OWNER/COLLABORATOR (main) @ 9a2d4e0
+          2 path pattern(s) · baseline sync-state/jenny: @ 7c3f1ab · merge=text, conflict=swap
+joi       OWNER/VAULT (main) @ 7c3f1ab
+          OWNER/SC-JOI/steffen-notes (main) @ 3f80a12
+          1 path pattern(s) · baseline sync-state/joi: MISSING · merge=union, conflict=swap
+          new pair? `sc sync --initialize`; lost state? restore the branch
+PRs       1 open PR(s) across mapped repositories
 Lock      free
 Last run  2026-09-15T09:45:00 UTC — ok, 0 conflicts
 Log       /home/you/.local/state/sc/sync-error.log — empty
@@ -136,26 +144,43 @@ Log       /home/you/.local/state/sc/sync-error.log — empty
 
 ## Sync semantics
 
-- Each allowed file is compared with its last shared snapshot on the private
-  `sync-state/<name>` branch. One-sided additions, edits and deletions
-  propagate either way; clean concurrent changes to printable-UTF-8 text
-  merge automatically.
-- Nontrivial conflicts (including modify/delete, non-text, mode conflicts)
-  accept the **entire collaborator file state**; the vault alternative is
-  preserved on a `sync-review/<name>/...` branch and a private vault PR.
-  Merge the PR to restore the vault alternative, or close it to keep the
-  collaborator's version. Resolutions flow back on the next sync.
+Per granted file, the merge ladder applies:
+
+1. Identical or one-sided changes (including deletions and new files
+   matching a glob) propagate in both directions.
+2. Clean concurrent changes to printable-UTF-8 text merge automatically
+   (3-way merge against the private baseline).
+3. With `merge = "union"` (opt-in per map), overlapping edits union-merge:
+   both sides' lines are kept. Both repositories see the combined result
+   immediately; fix anything awkward by editing, the next sync propagates it.
+4. Everything else — overlapping edits without union, binary/non-UTF-8
+   content, mode changes, modify/delete conflicts — is **frozen** according
+   to the map's `conflict` mode:
+   - `"swap"` (default): each side keeps its own version on main and gets a
+     review PR offering the other side's version. Merge at most one of the
+     two PRs; the next sync converges both repositories and auto-closes the
+     counterpart PR. Hand-editing anywhere works too.
+   - `"to-wins"`: the `to` side's whole file state lands on both mains; the
+     `from` alternative is preserved in a PR on the `from` repository.
+   - `"freeze"`: freeze only, no PRs.
+
+`bi_directional = false` turns a map into a one-way mirror: the `from` side is
+authoritative, `to`-side edits are overwritten on the next sync (counted in
+the report), and nothing is ever imported from `to`.
+
+Other invariants:
+
 - Normal (non-force) pushes only; concurrent edits reject the push. A failed
   run can leave one side ahead — rerun to converge. A local lock serializes
   runs on one host.
 - Missing baselines stop sync by default. `--initialize` is for genuinely new
   pairs only; after state loss, restore the `sync-state` branch instead.
-- Incoming files are never checked out or executed; only shared blobs and
-  collaborator ancestry are pushed externally, never private vault history.
+- Incoming files are never checked out or executed; only shared blobs are
+  pushed between endpoints, never either side's history.
 - The engine never checks out file contents into a working tree. Each run
   works on Git objects in a temporary directory (under `$XDG_STATE_HOME/sc`,
-  deleted after each collaborator), so a sync host retains only the lock
-  file, `last-run.json` and the private error log — no file copies persist.
+  deleted after each map), so a sync host retains only the lock file,
+  `last-run.json` and the private error log — no file copies persist.
 
 ## Automation on GitHub Actions
 
@@ -175,7 +200,7 @@ private, the engine stays pinned. It triggers on vault pushes and every 15
 minutes. Configure once on a dedicated VM:
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.2.0
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.3.0
 gh auth login && gh auth setup-git
 sc runner install
 ```

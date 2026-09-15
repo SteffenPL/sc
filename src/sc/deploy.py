@@ -15,18 +15,22 @@ from pathlib import Path
 from sc import engine
 
 
-def _vault(args):
+def _source_repo(args):
     from sc import config
     path = config.resolve(getattr(args, 'config', None))
     if path is None or not path.is_file():
         print('No config found; run `sc init` or pass --config.', file=sys.stderr)
         return None
-    settings = config.load(path)
-    vault = settings.get('vault', {})
-    if not vault.get('repo'):
-        print('Config has no [vault] repo.', file=sys.stderr)
+    try:
+        settings = config.load(path)
+        specs = config.resolve_maps(settings)
+    except (OSError, ValueError) as error:
+        print(f'Cannot resolve config {path}: {error}', file=sys.stderr)
         return None
-    return vault.get('repo'), vault.get('branch', 'main')
+    if not specs:
+        print('Config defines no maps.', file=sys.stderr)
+        return None
+    return specs[0]['from']['repo'], specs[0]['from']['branch']
 
 
 def _runner_dir(argument):
@@ -42,10 +46,10 @@ def render_workflow(config_repo, config_branch, config_file):
 
 
 def install_workflow(args):
-    vault = _vault(args)
-    if vault is None:
+    source = _source_repo(args)
+    if source is None:
         return 1
-    vault_repo, vault_branch = vault
+    source_repo, source_branch = source
     content = render_workflow(args.config_repo, args.config_branch, args.config_file)
     path = f'.github/workflows/{args.name}'
     sha = None
@@ -105,10 +109,10 @@ def install_runner(args):
     if args.repo:
         repo = args.repo
     else:
-        vault = _vault(args)
-        if vault is None:
+        source = _source_repo(args)
+        if source is None:
             return 1
-        repo = vault[0]
+        repo = source[0]
     directory = _runner_dir(args.dir)
     if (directory / '.runner').exists():
         print(f'{directory} is already configured; run `sc runner remove` first.',
@@ -164,10 +168,10 @@ def remove_runner(args):
     if args.repo:
         repo = args.repo
     else:
-        vault = _vault(args)
-        if vault is None:
+        source = _source_repo(args)
+        if source is None:
             return 1
-        repo = vault[0]
+        repo = source[0]
     if args.service and (directory / 'svc.sh').exists():
         try:
             subprocess.run(['sudo', './svc.sh', 'stop'], cwd=directory, check=False)

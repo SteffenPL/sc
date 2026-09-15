@@ -1,26 +1,40 @@
 # sc configuration — private by default.
-# Grant only what you explicitly list here; everything else stays in the vault.
-# Exact vault-relative paths only: no globs, no '..', no '.git'.
-# Check with `sc doctor`; apply with `sc sync` (add --initialize once for new pairs).
+# Maps pair repositories (folder-level routing); permissions grant files.
+# Nothing is shared unless a permission grants it through a map.
+# Check with `sc doctor`; apply with `sc sync` (add --initialize once for
+# new pairs, or --dry-run to preview without pushing).
 
-[vault]
-repo = "OWNER/VAULT"            # your private vault repository
-# branch = "main"              # optional; defaults to "main"
+# A map pairs exactly two repositories. Endpoints are 'Owner/Repo[/folder]';
+# the optional folder is a prefix: stripped from that side's paths and added
+# to the other side's outgoing files. 'name' is unique and names the private
+# sync-state/<name> baseline branch on the from side.
+# Knobs (defaults shown): merge = "text" | "union"; conflict = "swap" |
+# "to-wins" | "freeze"; bi_directional = true | false (one-way mirror).
 
-[collaborators.example]
-repo = "OWNER/COLLABORATOR"    # the collaborator's own shared repository
-# branch = "main"              # optional; defaults to "main"
-# prefix = "vault-name"        # optional: granted files appear under this
-#                              # folder in the collaborator repo
-include = [
+[[maps]]
+name = "example"
+from = "OWNER/VAULT"
+to   = "OWNER/COLLABORATOR/shared-folder"
+# from_branch = "main"               # optional; defaults to "main"
+# to_branch = "main"
+# merge = "union"                    # opt-in: keep both sides' overlapping lines
+# conflict = "swap"                  # freeze files + review PRs on both sides
+# bi_directional = true
+
+# Permissions grant path patterns to travel through named maps.
+# Paths are full 'Owner/Repo/path' — or relative when a repo context is given.
+# Globs: '*' one segment, '**' any depth, '{a,b}' alternatives. A glob is
+# folder-level pre-consent: files later created under it by EITHER side sync
+# automatically. Review expanded matches with `sc sync --dry-run`.
+
+[[permissions]]
+repo = "OWNER/VAULT"                  # optional context for relative paths
+paths = [
     "Projects/Example.md",
+    # "Projects/*.md",
+    # "{Projects,References}/**",
 ]
+maps = ["example"]
 
-# Optional additive grants: share additional whole files with listed
-# collaborators without editing each block.
-# [[shares]]
-# paths = ["Projects/Another.md"]
-# to = ["example"]
-
-[sync]                         # entirely optional
-interval = 900                 # `sc watch` poll interval in seconds (>= 60)
+[sync]                               # entirely optional
+interval = 900                       # `sc watch` poll interval in seconds (>= 60)

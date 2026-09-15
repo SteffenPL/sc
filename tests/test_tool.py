@@ -18,49 +18,112 @@ def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
 
 
-class ConfigTests(unittest.TestCase):
-    def test_valid_config_passes(self):
-        settings = {'vault': {'repo': 'a/b'},
-                   'collaborators': {'ok': {'repo': 'c/d', 'include': ['f.md']}},
-                   'shares': [{'paths': ['g.md'], 'to': ['ok']}],
-                   'sync': {'interval': 300}}
-        self.assertEqual(config.validate(settings), [])
+class LocationTests(unittest.TestCase):
+    def test_parse_location(self):
+        self.assertEqual(config.parse_location('A/B'), ('A/B', ''))
+        self.assertEqual(config.parse_location('A/B/C'), ('A/B', 'C'))
+        self.assertEqual(config.parse_location('A/B/C/D'), ('A/B', 'C/D'))
+        self.assertEqual(config.parse_location('https://github.com/A/B/C'), ('A/B', 'C'))
+        self.assertEqual(config.parse_location('/tmp/some/repo'), ('/tmp/some/repo', ''))
 
-    def test_missing_sections_are_errors(self):
-        self.assertTrue(config.validate({}))
-        self.assertTrue(config.validate({'vault': {'repo': 'a/b'}}))
+    def test_parse_location_rejects_unsafe(self):
+        for value in ('', 'A', 'A/B/../x', 'A/B/.git', 'A/B/C/', 'A/B/*.md', None, 5):
+            with self.assertRaises(ValueError, msg=repr(value)):
+                config.parse_location(value)
 
-    def test_unsafe_paths_are_errors(self):
-        for path in ('../secret', '.git/config', '**', '/etc/passwd', 'a/../b'):
-            settings = {'vault': {'repo': 'a/b'},
-                       'collaborators': {'x': {'repo': 'c/d', 'include': [path]}}}
-            errors = config.validate(settings)
-            self.assertTrue(any(path in error for error in errors), path)
-            self.assertTrue(all('FAILED' not in error for error in errors))
 
-    def test_share_targeting_unknown_collaborator_is_an_error(self):
-        settings = {'vault': {'repo': 'a/b'},
-                    'collaborators': {'x': {'repo': 'c/d', 'include': ['f.md']}},
-                    'shares': [{'paths': ['g.md'], 'to': ['nobody']}]}
-        self.assertTrue(any('unknown collaborator' in error for error in config.validate(settings)))
+class PatternTests(unittest.TestCase):
+    def test_expand_braces(self):
+        self.assertEqual(config.expand_braces('a{b,c}d'), ['abd', 'acd'])
+        self.assertEqual(config.expand_braces('a{b,{c,d}}e'), ['abe', 'ace', 'ade'])
+        self.assertEqual(config.expand_braces('plain'), ['plain'])
+        for bad in ('{a', 'a{,b}c'):
+            with self.assertRaises(ValueError, msg=bad):
+                config.expand_braces(bad)
 
-    def test_bad_interval_is_an_error(self):
-        for interval in (10, 'x', True, None):
-            settings = {'vault': {'repo': 'a/b'},
-                       'collaborators': {'x': {'repo': 'c/d', 'include': ['f.md']}},
-                       'sync': {'interval': interval}}
-            self.assertTrue(any('interval' in error for error in config.validate(settings)), interval)
+    def test_pattern_regex(self):
+        cases = [
+            ('*.md', 'note.md', True), ('*.md', 'a/note.md', False),
+            ('Projects/*', 'Projects/x.md', True), ('Projects/*', 'Projects/a/x.md', False),
+            ('Projects/**', 'Projects/x.md', True), ('Projects/**', 'Projects/a/b/x.md', True),
+            ('Projects/**', 'Projects', False),
+            ('a/**/x.md', 'a/x.md', True), ('a/**/x.md', 'a/b/x.md', True),
+            ('a?.txt', 'ab.txt', True), ('a?.txt', 'abc.txt', False),
+            ('note.md', 'note.md', True), ('note.md', 'other.md', False),
+        ]
+        for pattern, path, expected in cases:
+            self.assertEqual(bool(config.pattern_regex(pattern).fullmatch(path)),
+                             expected, f'{pattern!r} vs {path!r}')
 
-    def test_prefix_validation(self):
-        def errors_with(prefix):
-            settings = {'vault': {'repo': 'a/b'},
-                        'collaborators': {'x': {'repo': 'c/d', 'include': ['f.md'],
-                                                'prefix': prefix}}}
+
+def sample_settings():
+    return {
+        'maps': [
+            {'name': 'jenny', 'from': 'SteffenPL/steffen-notes',
+             'to': 'SteffenPL/sc-jenny-chang'},
+            {'name': 'joi', 'from': 'SteffenPL/steffen-notes',
+             'to': 'SteffenPL/sc-joi/steffen-notes'},
+        ],
+        'permissions': [
+            {'repo': 'SteffenPL/steffen-notes',
+             'paths': ['Projects/Diet.md', '{Projects,Views}/*'],
+             'maps': ['jenny']},
+            {'paths': ['SteffenPL/steffen-notes/Projects/Henkaku Duties.md'],
+             'maps': ['joi']},
+            {'paths': ['SteffenPL/sc-joi/steffen-notes/Projects/Joi File.md'],
+             'maps': ['joi']},
+        ],
+        'sync': {'interval': 300},
+    }
+
+
+class ResolveMapsTests(unittest.TestCase):
+    def test_resolves_maps_and_patterns(self):
+        specs = config.resolve_maps(sample_settings())
+        self.assertEqual([spec['name'] for spec in specs], ['jenny', 'joi'])
+        jenny, joi = specs
+        self.assertEqual(jenny['to']['prefix'], '')
+        self.assertEqual(jenny['patterns'],
+                         ['Projects/*', 'Projects/Diet.md', 'Views/*'])
+        self.assertEqual(joi['to']['prefix'], 'steffen-notes')
+        self.assertEqual(joi['patterns'],
+                         ['Projects/Henkaku Duties.md', 'Projects/Joi File.md'])
+        self.assertEqual(joi['conflict'], 'swap')
+        self.assertEqual(joi['merge'], 'text')
+
+    def test_rejects_bad_configs(self):
+        base = sample_settings()
+
+        def errors_with(mutation):
+            settings = sample_settings()
+            mutation(settings)
             return config.validate(settings)
-        self.assertEqual(errors_with('steffen-notes'), [])
-        self.assertEqual(errors_with('a/b'), [])
-        for prefix in ('', '../x', '.git', 'a/', '/abs', 'x*', './a', 5, True):
-            self.assertTrue(errors_with(prefix), prefix)
+
+        self.assertEqual(config.validate(sample_settings()), [])
+        self.assertTrue(errors_with(lambda s: s.update({'maps': []})))
+        self.assertTrue(errors_with(lambda s: s['maps'][0].update({'name': 'joi'})))  # duplicate
+        self.assertTrue(errors_with(lambda s: s['maps'][0].update({'merge': 'magic'})))
+        self.assertTrue(errors_with(lambda s: s['maps'][0].update({'conflict': 'shout'})))
+        self.assertTrue(errors_with(lambda s: s['maps'][0].update({'bi_directional': 'yes'})))
+        self.assertTrue(errors_with(lambda s: s['maps'][0].update({'to': 'SteffenPL/steffen-notes/x'})))
+        self.assertTrue(errors_with(lambda s: s['permissions'][0].update({'maps': ['ghost']})))
+        self.assertTrue(errors_with(lambda s: s['permissions'][0].update(
+            {'repo': None, 'paths': ['SteffenPL/other/notes/Projects/x.md']})))
+        self.assertTrue(errors_with(lambda s: s['permissions'][0].update(
+            {'repo': None, 'paths': ['Projects/x.md']})))  # relative without context
+        self.assertTrue(errors_with(lambda s: s['permissions'][0].update(
+            {'paths': ['SteffenPL/steffen-notes/[abc].md']})))
+        self.assertTrue(errors_with(lambda s: s['permissions'][0].update(
+            {'paths': ['SteffenPL/steffen-notes/Projects/../private.md']})))
+        self.assertTrue(errors_with(lambda s: s.update({'sync': {'interval': 10}})))
+        # A path outside a prefixed map folder is unroutable.
+        self.assertTrue(errors_with(lambda s: s.update({
+            'maps': s['maps'] + [{'name': 'arch', 'from': 'A/B/Projects', 'to': 'C/D'}],
+            'permissions': s['permissions'] + [
+                {'paths': ['A/B/README.md'], 'maps': ['arch']}]})))
+
+    def test_validate_missing_maps(self):
+        self.assertTrue(config.validate({}))
 
 
 class WorkflowRenderTests(unittest.TestCase):
@@ -97,10 +160,14 @@ class RunSyncTests(unittest.TestCase):
             self.repos[name] = repo
         self.config_path = self.root / 'sc.toml'
         self.config_path.write_text(
-            f'[vault]\nrepo = "{self.repos["vault"]}"\n'
-            f'[collaborators.demo]\nrepo = "{self.repos["collab"]}"\n'
-            'include = ["note.md"]\n')
-        (self.repos['vault'] / 'private.md').write_text('secret\n')
+            '[[maps]]\nname = "demo"\n'
+            f'from = "{self.repos["vault"]}"\n'
+            f'to = "{self.repos["collab"]}"\n\n'
+            '[[permissions]]\n'
+            f'repo = "{self.repos["vault"]}"\n'
+            'paths = ["note.md"]\n'
+            'maps = ["demo"]\n')
+        (self.repos['vault'] / 'private.txt').write_text('secret\n')
         (self.repos['vault'] / 'note.md').write_text('shared\n')
         git(self.repos['vault'], 'add', '-A')
         git(self.repos['vault'], 'commit', '-qm', 'Initial files')
@@ -108,17 +175,20 @@ class RunSyncTests(unittest.TestCase):
                                       'GITHUB_STEP_SUMMARY': ''})
         env.start()
         self.addCleanup(env.stop)
-
-    def test_run_sync_propagates_and_records(self):
-        prs = patch.object(cli, 'list_prs', return_value=[])
-        prs.start()
-        self.addCleanup(prs.stop)
         ensure = patch.object(engine, 'ensure_pr')
         ensure.start()
         self.addCleanup(ensure.stop)
+        close = patch.object(engine, 'close_stale_prs')
+        close.start()
+        self.addCleanup(close.stop)
+        prs = patch.object(cli, 'list_prs', return_value=[])
+        prs.start()
+        self.addCleanup(prs.stop)
+
+    def test_run_sync_propagates_and_records(self):
         self.assertTrue(cli.run_sync(self.config_path, initialize=True) is False)
         self.assertEqual((self.repos['collab'] / 'note.md').read_text(), 'shared\n')
-        self.assertFalse((self.repos['collab'] / 'private.md').exists())
+        self.assertFalse((self.repos['collab'] / 'private.txt').exists())
         (self.repos['vault'] / 'note.md').write_text('updated\n')
         git(self.repos['vault'], 'add', '-A')
         git(self.repos['vault'], 'commit', '-qm', 'Edit')
@@ -130,20 +200,38 @@ class RunSyncTests(unittest.TestCase):
         self.assertTrue(any('demo:' in line for line in record['results']))
 
     def test_run_sync_rejects_invalid_config_without_touching_repos(self):
-        self.config_path.write_text('[vault]\nrepo = "a/b"\n'
-                                    '[collaborators.demo]\nrepo = "c/d"\n'
-                                    'include = ["../escape.md"]\n')
+        self.config_path.write_text('[[maps]]\nname = "demo"\n'
+                                    f'from = "{self.repos["vault"]}"\n'
+                                    f'to = "{self.repos["collab"]}"\n\n'
+                                    '[[permissions]]\n'
+                                    f'repo = "{self.repos["vault"]}"\n'
+                                    'paths = ["../escape.md"]\n'
+                                    'maps = ["demo"]\n')
         before = [git(r, 'rev-parse', 'main') for r in self.repos.values()]
         self.assertTrue(cli.run_sync(self.config_path, initialize=True))
         self.assertEqual(before, [git(r, 'rev-parse', 'main') for r in self.repos.values()])
         self.assertFalse((self.root / 'state/sc/last-run.json').exists())
 
+    def test_dry_run_leaves_repos_untouched(self):
+        self.assertTrue(cli.run_sync(self.config_path, initialize=True) is False)
+        self.assertEqual((self.repos['collab'] / 'note.md').read_text(), 'shared\n')
+        (self.repos['vault'] / 'note.md').write_text('pending edit\n')
+        git(self.repos['vault'], 'add', '-A')
+        git(self.repos['vault'], 'commit', '-qm', 'Edit')
+        self.assertTrue(cli.run_sync(self.config_path, dry_run=True) is False)
+        self.assertEqual((self.repos['collab'] / 'note.md').read_text(), 'shared\n')
+        self.assertEqual((self.repos['vault'] / 'note.md').read_text(), 'pending edit\n')
+        # A real run afterwards still propagates the pending edit.
+        self.assertTrue(cli.run_sync(self.config_path) is False)
+        self.assertEqual((self.repos['collab'] / 'note.md').read_text(), 'pending edit\n')
+
 
 class CliParserTests(unittest.TestCase):
     def test_subcommands_parse(self):
         parser = cli.build_parser()
-        args = parser.parse_args(['sync', '-c', 'x.toml', '--initialize'])
+        args = parser.parse_args(['sync', '-c', 'x.toml', '--initialize', '--dry-run'])
         self.assertTrue(args.initialize)
+        self.assertTrue(args.dry_run)
         self.assertEqual(args.config, Path('x.toml'))
         args = parser.parse_args(['watch', '-i', '120'])
         self.assertEqual(args.interval, 120)
