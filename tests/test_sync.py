@@ -154,5 +154,90 @@ class SyncTests(unittest.TestCase):
                 self.run_sync()
 
 
+class PrefixTests(unittest.TestCase):
+    """A collaborator with prefix maps vault paths into a subfolder."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repos = {}
+        for name in ('vault', 'collab'):
+            repo = self.root / name
+            repo.mkdir()
+            git(repo, 'init', '-q', '-b', 'main')
+            git(repo, 'config', 'user.name', 'Test')
+            git(repo, 'config', 'user.email', 'test@example.org')
+            git(repo, 'config', 'receive.denyCurrentBranch', 'updateInstead')
+            git(repo, 'commit', '-qm', 'Initial', '--allow-empty')
+            self.repos[name] = repo
+        self.settings = {'vault': {'repo': str(self.repos['vault'])},
+                         'collaborators': {'test': {
+                             'repo': str(self.repos['collab']),
+                             'prefix': 'mirror',
+                             'include': ['Projects/note.md']}}}
+        self.prs = []
+        mock = patch.object(engine, 'ensure_pr', side_effect=lambda *args: self.prs.append(args))
+        mock.start()
+        self.addCleanup(mock.stop)
+        self.edit('vault', 'private.md', 'secret')
+        self.edit('vault', 'Projects/note.md', 'one\ntwo\n')
+        self.run_sync(initialize=True)
+
+    def edit(self, repo, path, content):
+        root = self.repos[repo]
+        target = root / path
+        if content is None:
+            target.unlink()
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'Edit')
+
+    def collab_path(self, path):
+        return self.repos['collab'] / 'mirror' / path
+
+    def run_sync(self, initialize=False):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp:
+            return engine.sync_one(self.settings, 'test', Path(tmp), initialize=initialize)
+
+    def test_prefix_mapping_roundtrip(self):
+        self.assertEqual(self.collab_path('Projects/note.md').read_text(), 'one\ntwo\n')
+        self.assertFalse((self.repos['collab'] / 'Projects/note.md').exists())
+        self.assertFalse(self.collab_path('private.md').exists())
+        # Collaborator edit at the mapped path propagates back to the vault.
+        self.edit('collab', 'mirror/Projects/note.md', 'ONE\ntwo\n')
+        self.run_sync()
+        self.assertEqual((self.repos['vault'] / 'Projects/note.md').read_text(), 'ONE\ntwo\n')
+        # Unmanaged files under the prefix stay external and are ignored.
+        self.edit('collab', 'mirror/Projects/unlisted.md', 'not granted')
+        self.run_sync()
+        self.assertFalse((self.repos['vault'] / 'Projects/unlisted.md').exists())
+        self.assertTrue(self.collab_path('Projects/unlisted.md').exists())
+        # Revocation removes only the mapped copy.
+        self.settings['collaborators']['test']['include'] = []
+        self.run_sync()
+        self.assertFalse(self.collab_path('Projects/note.md').exists())
+        self.assertTrue((self.repos['vault'] / 'Projects/note.md').exists())
+
+    def test_prefix_conflict_preserves_vault_alternative(self):
+        self.edit('vault', 'Projects/note.md', 'vault alternative\n')
+        self.edit('collab', 'mirror/Projects/note.md', 'external wins\n')
+        self.run_sync()
+        self.assertEqual(self.collab_path('Projects/note.md').read_text(), 'external wins\n')
+        self.assertEqual((self.repos['vault'] / 'Projects/note.md').read_text(), 'external wins\n')
+        self.assertTrue(self.prs)
+        branch = self.prs[-1][1]
+        self.assertEqual(git(self.repos['vault'], 'show', f'{branch}:Projects/note.md'),
+                         'vault alternative')
+
+    def test_unsafe_prefix_is_rejected(self):
+        for prefix in ('../x', '.git', 'a/', '/abs', 'x*', './a'):
+            self.settings['collaborators']['test']['prefix'] = prefix
+            with self.assertRaises(ValueError):
+                self.run_sync()
+
+
 if __name__ == '__main__':
     unittest.main()

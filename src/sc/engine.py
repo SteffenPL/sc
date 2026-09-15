@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from sc.config import allowed_paths
+from sc.config import allowed_paths, external_prefix
 
 BOT = {'GIT_AUTHOR_NAME': 'Shared Context', 'GIT_COMMITTER_NAME': 'Shared Context',
        'GIT_AUTHOR_EMAIL': 'shared-context@users.noreply.github.com',
@@ -58,7 +58,12 @@ def sync_one(settings, name, work, initialize=False):
     allowed = allowed_paths(settings, name)
     vault = settings['vault']
     external = settings['collaborators'][name]
+    prefix = external_prefix(external)
     vb, eb = vault.get('branch', 'main'), external.get('branch', 'main')
+
+    def external_path(path):
+        # Vault-relative paths may map into a folder prefix in the collaborator repo.
+        return f'{prefix}/{path}' if prefix else path
 
     def git(*args, data=None):
         return command('git', '-C', str(work), *args, data=data)
@@ -118,7 +123,7 @@ def sync_one(settings, name, work, initialize=False):
 
     merged, conflicts = {}, []
     for path in sorted(allowed):
-        b, v, e = base.get(path), vfiles.get(path), efiles.get(path)
+        b, v, e = base.get(path), vfiles.get(path), efiles.get(external_path(path))
         if v == e or e == b:
             chosen = v
         elif v == b:
@@ -147,8 +152,11 @@ def sync_one(settings, name, work, initialize=False):
     new_vault = {p: value for p, value in vfiles.items() if p not in allowed}
     new_vault.update(merged)
     # Unknown external files stay external; revoked previously shared files are removed.
-    new_external = {p: value for p, value in efiles.items() if p not in allowed and p not in base}
-    new_external.update(merged)
+    mapped_allowed = {external_path(p) for p in allowed}
+    mapped_base = {external_path(p) for p in base}
+    new_external = {p: value for p, value in efiles.items()
+                    if p not in mapped_allowed and p not in mapped_base}
+    new_external.update({external_path(p): value for p, value in merged.items()})
     vnew = commit(new_vault, vhead, f'Sync shared context: {name}')
     enew = commit(new_external, ehead, 'Sync shared context')
     pushes = [f'{vnew}:refs/heads/{vb}']
@@ -172,5 +180,5 @@ def sync_one(settings, name, work, initialize=False):
     return (f'{name}: vault {"updated" if vnew != vhead else "unchanged"}, '
             f'collaborator {"updated" if enew != ehead else "unchanged"}; '
             f'{len(conflicts)} conflict(s) preserved for review; '
-            f'{len(set(efiles) - allowed - set(base))} unmanaged external file(s) ignored.',
+            f'{len(set(efiles) - mapped_allowed - mapped_base)} unmanaged external file(s) ignored.',
             len(conflicts))

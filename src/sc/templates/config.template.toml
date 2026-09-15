@@ -9,7 +9,9 @@ repo = "OWNER/VAULT"            # your private vault repository
 
 [collaborators.example]
 repo = "OWNER/COLLABORATOR"    # the collaborator's own shared repository
-# branch = "main"
+# branch = "main"              # optional; defaults to "main"
+# prefix = "vault-name"        # optional: granted files appear under this
+#                              # folder in the collaborator repo
 include = [
     "Projects/Example.md",
 ]

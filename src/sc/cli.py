@@ -181,8 +181,9 @@ def cmd_status(args):
             _row(name, f'{entry["repo"]} ({external_branch}) ' +
                  (f'@ {external_tip}' if external_tip else '— unreachable'))
             granted = len(config.allowed_paths(settings, name))
+            prefix = entry.get('prefix')
             baseline = _tip(vault_url, f'sync-state/{name}')
-            details = [f'{granted} granted path(s)',
+            details = [f'{granted} granted path(s)' + (f' under {prefix}/' if prefix else ''),
                        f'baseline sync-state/{name}: ' + (f'@ {baseline}' if baseline else 'MISSING')]
             if baseline is None:
                 details.append('new pair? `sc sync --initialize`; lost state? restore the branch')

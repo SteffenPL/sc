@@ -43,6 +43,23 @@ def allowed_paths(settings, name):
     return paths
 
 
+def external_prefix(entry):
+    """Validated collaborator-side folder prefix, or None when unset."""
+    prefix = entry.get('prefix')
+    if prefix is None:
+        return None
+    if not isinstance(prefix, str) or not prefix:
+        raise ValueError('prefix must be a non-empty string')
+    parts = PurePosixPath(prefix).parts
+    if (not parts or prefix.startswith('/') or '..' in parts or
+            any(p.lower() == '.git' for p in parts) or
+            any(c in prefix for c in '*?[]\\\n\r\0') or
+            str(PurePosixPath(prefix)) != prefix):
+        raise ValueError(f'Only exact, safe collaborator-relative folder '
+                         f'prefixes are allowed: {prefix!r}')
+    return prefix
+
+
 def validate(settings):
     """Return a list of configuration errors; an empty list means valid."""
     errors = []
@@ -62,6 +79,7 @@ def validate(settings):
             errors.append(f'[collaborators.{name}] must define repo = "owner/name"')
             continue
         try:
+            external_prefix(entry)
             allowed_paths(settings, name)
         except (ValueError, KeyError, TypeError) as error:
             errors.append(f'collaborators.{name}: {error}')

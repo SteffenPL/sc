@@ -28,7 +28,7 @@ standard library only; uv provides a suitable Python automatically.
 ## Install
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.1.0
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.2.0
 uv tool update-shell     # ensure ~/.local/bin is on PATH, if needed
 ```
 
@@ -37,7 +37,6 @@ Updates: `uv tool upgrade sc`. One-off use without installing:
 ```sh
 uvx --from git+https://github.com/SteffenPL/sc.git sc status
 ```
-
 ## Quick start
 
 ```sh
@@ -80,6 +79,11 @@ include = [                          # exact vault-relative paths only
     "Projects/Diet.md",
 ]
 
+[collaborators.joi]
+repo = "OWNER/SC-JOI"
+prefix = "steffen-notes"             # optional: all granted files appear under
+include = ["Projects/Henkaku Duties.md"]  # steffen-notes/... in the collaborator repo
+
 [collaborators.bob]
 repo = "ORG/BOB-SHARED"
 include = ["Projects/Bob Project.md"]
@@ -106,6 +110,15 @@ Managing the map:
 Rules are strict on purpose: exact paths only — globs, `..`, `.git` and
 absolute paths are rejected. Files are shared whole, not redacted; revocation
 cannot erase old history or downloaded copies.
+
+Path mapping: without `prefix`, a granted vault path appears at the same path
+in the collaborator repo. With `prefix`, it appears at `<prefix>/<vault path>`
+— useful to mirror your whole vault namespace inside a collaborator repo.
+Baselines and recovery state stay keyed by vault path. **Caution:** adding or
+changing `prefix` on an *existing* pair makes the mapped paths look deleted on
+the collaborator side, which propagates deletions to your vault — first move
+the files to the new prefix inside the collaborator repo (same content), then
+change the config.
 
 ## `sc status` example
 
@@ -139,6 +152,10 @@ Log       /home/you/.local/state/sc/sync-error.log — empty
   pairs only; after state loss, restore the `sync-state` branch instead.
 - Incoming files are never checked out or executed; only shared blobs and
   collaborator ancestry are pushed externally, never private vault history.
+- The engine never checks out file contents into a working tree. Each run
+  works on Git objects in a temporary directory (under `$XDG_STATE_HOME/sc`,
+  deleted after each collaborator), so a sync host retains only the lock
+  file, `last-run.json` and the private error log — no file copies persist.
 
 ## Automation on GitHub Actions
 
@@ -158,7 +175,7 @@ private, the engine stays pinned. It triggers on vault pushes and every 15
 minutes. Configure once on a dedicated VM:
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.1.0
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.2.0
 gh auth login && gh auth setup-git
 sc runner install
 ```

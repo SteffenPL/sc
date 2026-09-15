@@ -51,6 +51,17 @@ class ConfigTests(unittest.TestCase):
                        'sync': {'interval': interval}}
             self.assertTrue(any('interval' in error for error in config.validate(settings)), interval)
 
+    def test_prefix_validation(self):
+        def errors_with(prefix):
+            settings = {'vault': {'repo': 'a/b'},
+                        'collaborators': {'x': {'repo': 'c/d', 'include': ['f.md'],
+                                                'prefix': prefix}}}
+            return config.validate(settings)
+        self.assertEqual(errors_with('steffen-notes'), [])
+        self.assertEqual(errors_with('a/b'), [])
+        for prefix in ('', '../x', '.git', 'a/', '/abs', 'x*', './a', 5, True):
+            self.assertTrue(errors_with(prefix), prefix)
+
 
 class WorkflowRenderTests(unittest.TestCase):
     def test_placeholders_are_replaced(self):
