@@ -1,0 +1,25 @@
+# Example: run `sc watch` in a container. Copy to compose.yml and adjust.
+#
+#   cp compose.example.yml compose.yml
+#   export GH_TOKEN=<fine-grained PAT: contents read/write on both repos,
+#                     PR create/list on the review side>
+#   docker compose up -d && docker compose logs -f
+#
+# One sync host only: if you start this, disable every other sync
+# (Actions runner, cron, local install) for the same repositories.
+services:
+  sc:
+    build:
+      context: .
+      args:
+        SC_VERSION: v0.3.0        # engine version baked into the image
+    restart: unless-stopped
+    environment:
+      GH_TOKEN: ${GH_TOKEN}
+    volumes:
+      - ./sc.toml:/config/sc.toml:ro
+      - sc-state:/state            # lock, last-run report, private error log
+    # command: ["watch", "-i", "300"]   # override the poll interval if desired
+
+volumes:
+  sc-state:

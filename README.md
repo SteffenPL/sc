@@ -13,6 +13,17 @@ freeze with review PRs on **both** sides.
 Keep configuration and credentials inaccessible to collaborators, and use
 exactly **one sync host** (one machine, VM or runner) per vault.
 
+## Relation to [Copybara](https://github.com/google/copybara)
+
+sc overlaps with Copybara, Google's Starlark-configured tool for moving code
+between repositories. This project began as a Copybara setup and replaced it:
+the use case — allowlisted, bidirectional sharing of individual files between
+a private vault and collaborator repositories, with whole-file privacy
+semantics and conflict review PRs — needs policies that Copybara does not
+express directly. sc is standard-library Python (no Java/Bazel, no generated
+Starlark), configured in plain TOML, and transfers only granted file
+contents, never repository history.
+
 ## Prerequisites
 
 - Linux (macOS works too)
@@ -27,6 +38,11 @@ standard library only; uv provides a suitable Python automatically.
 
 ## Install
 
+**Pick exactly one deployment — a local install, [Docker](#run-in-docker), or
+a self-hosted Actions runner — and never run two against the same
+repositories.** Concurrent syncs fail safely (non-force pushes reject each
+other), but they violate the one-sync-host rule and produce noise and races.
+
 ```sh
 uv tool install git+https://github.com/SteffenPL/sc.git@v0.3.0
 uv tool update-shell     # ensure ~/.local/bin is on PATH, if needed
@@ -37,6 +53,29 @@ Updates: `uv tool upgrade sc`. One-off use without installing:
 ```sh
 uvx --from git+https://github.com/SteffenPL/sc.git sc status
 ```
+
+## Run in Docker
+
+Alternative to a local install — the same **either/or** rule applies: run a
+local install *or* the container, never both. The repository ships an example
+[`Dockerfile`](Dockerfile) (Debian slim with git, a current GitHub CLI and the
+pinned `sc`) and [`compose.example.yml`](compose.example.yml):
+
+```sh
+cp compose.example.yml compose.yml      # adjust the config mount if needed
+export GH_TOKEN=<fine-grained PAT>      # contents rw on both repos + PR create/list
+docker compose up -d                    # runs `sc watch` (default every 900s)
+docker compose logs -f
+```
+
+- Mount your config at `/config/sc.toml` — `sc` picks it up automatically.
+- `GH_TOKEN` is all the container needs: `gh` reads it directly and the image
+  preconfigures git's credential helper. No `gh auth login` inside.
+- The container is stateless: baselines live in your repositories
+  (`sync-state/*` branches). The `/state` volume only keeps the lock, the
+  last-run report and the private error log — optional, but nice to persist.
+- Build another engine version with `docker build --build-arg SC_VERSION=…`.
+
 ## Quick start
 
 ```sh
@@ -206,7 +245,8 @@ sc runner install
 ```
 
 Instead of Actions, a VM can also run `sc watch` as a systemd user service
-(template in `src/sc/templates/sc-watch.service`). Either way: one sync host.
+(template in `src/sc/templates/sc-watch.service`). Whichever you choose —
+Actions runner, Docker, or local install — run exactly one sync host.
 
 ## Development
 
