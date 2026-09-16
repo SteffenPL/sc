@@ -19,7 +19,7 @@ sync both ways on `main`.
 ## Quick start
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.4
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.5
 sc init                       # writes an annotated sc.toml
 sc ui                         # edit maps + permissions in the browser
 sc doctor                     # verify prerequisites and config

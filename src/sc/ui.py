@@ -436,9 +436,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _page(self, text):
-        body = text.encode()
+        self._asset('text/html; charset=utf-8', text.encode())
+
+    def _asset(self, content_type, body):
         self.send_response(200)
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
@@ -488,6 +490,10 @@ class Handler(BaseHTTPRequestHandler):
             if route.path == '/':
                 return self._page(
                     (files('sc') / 'templates' / 'ui.html').read_text())
+            if route.path == '/vendor/force-graph.min.js':
+                return self._asset('application/javascript; charset=utf-8',
+                    (files('sc') / 'templates' / 'vendor' /
+                     'force-graph.min.js').read_bytes())
             if route.path == '/favicon.ico':
                 self.send_response(204)
                 self.send_header('Content-Length', '0')
