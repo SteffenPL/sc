@@ -1,6 +1,6 @@
 [project]
 name = "sc"
-version = "0.4.3"
+version = "0.4.4"
 description = "Allowlisted bidirectional sync between a private Git vault and collaborator repos"
 readme = "README.md"
 requires-python = ">=3.11"

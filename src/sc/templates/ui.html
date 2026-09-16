@@ -9,157 +9,198 @@
 <title>sc ui</title>
 <style>
 :root{
-  --bg:#f5f6f8; --card:#fff; --line:#d9dce2; --ink:#1d2430; --dim:#68707e;
-  --accent:#2456d6; --danger:#b3261e; --ok:#1b6e3d; --chipbg:#eef1f6;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --bg:#f5f5f7; --card:#ffffff; --line:#e2e3e8; --ink:#141414; --dim:#5d6570;
+  --accent:#911515; --accent-dark:#761010; --accentbg:#faecec;
+  --danger:#b3261e; --ok:#1b6e3d; --chipbg:#eef0f4;
+  --font:Ubuntu,"Ubuntu Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:Ubuntu Mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow:0 1px 2px rgba(20,20,20,.05), 0 2px 10px rgba(20,20,20,.06);
+  --shadow-up:0 -2px 14px rgba(20,20,20,.09);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header{display:flex;align-items:center;gap:14px;padding:10px 16px;
-  background:var(--card);border-bottom:1px solid var(--line);
+  font:14px/1.55 var(--font)}
+button{font:inherit;color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+header{display:flex;align-items:center;gap:20px;padding:12px 28px;
+  background:var(--card);border-bottom:1px solid var(--line);box-shadow:var(--shadow);
   position:sticky;top:0;z-index:20;flex-wrap:wrap}
-.brand{font-weight:700;font-size:16px}
+.brand{font-weight:700;font-size:17px;letter-spacing:.2px}
 .brand span{color:var(--accent)}
-.brand small{color:var(--dim);font-weight:400;margin-left:6px}
-.cfg{color:var(--dim);display:flex;align-items:center;gap:8px;min-width:0}
+.brand small{color:var(--dim);font-weight:400;margin-left:8px;font-size:12px}
+.cfg{color:var(--dim);display:flex;align-items:center;gap:10px;min-width:0}
 .cfg code{font-family:var(--mono);font-size:12px;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;max-width:42vw}
-nav{display:flex;gap:4px;margin-left:auto}
-nav button{border:1px solid transparent;background:none;padding:6px 12px;
-  border-radius:8px;cursor:pointer;font-size:14px;color:var(--dim)}
-nav button.on{background:var(--chipbg);color:var(--ink);font-weight:600}
-#syncBtn{border:1px solid var(--accent);color:var(--accent);background:none;
-  border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600}
-#syncBtn:disabled{opacity:.5;cursor:default}
-.switch{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
-  font-size:13px;color:var(--dim);font-weight:500}
-.switch input{appearance:none;-webkit-appearance:none;width:36px;height:20px;
-  margin:0;border-radius:999px;background:#c8ccd4;position:relative;
+  text-overflow:ellipsis;white-space:nowrap;max-width:38vw}
+nav{display:flex;gap:6px;margin-left:auto}
+nav button{border:none;background:none;padding:12px 14px 10px;cursor:pointer;
+  font-size:14px;font-weight:600;color:var(--dim);border-bottom:2.5px solid transparent;
+  border-radius:8px 8px 0 0;letter-spacing:.2px}
+nav button:hover{color:var(--ink);background:var(--chipbg)}
+nav button.on{color:var(--ink);border-bottom-color:var(--accent)}
+#syncBtn{border:none;color:#fff;background:var(--accent);border-radius:10px;
+  padding:8px 18px;cursor:pointer;font-weight:600;box-shadow:var(--shadow);
+  letter-spacing:.2px}
+#syncBtn:hover{background:var(--accent-dark)}
+#syncBtn:disabled{opacity:.45;cursor:default}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  font-size:13.5px;color:var(--ink);font-weight:500}
+.switch input{appearance:none;-webkit-appearance:none;width:38px;height:22px;
+  margin:0;border-radius:999px;background:#c9ccd4;position:relative;
   transition:background .15s;cursor:pointer;flex:none}
-.switch input:checked{background:var(--ok)}
+.switch input:checked{background:var(--accent)}
 .switch input:disabled{opacity:.55;cursor:default}
-.switch input::after{content:'';position:absolute;top:2px;left:2px;width:16px;
-  height:16px;border-radius:50%;background:#fff;transition:left .15s}
-.switch input:checked::after{left:18px}
-main{max-width:1100px;margin:0 auto;padding:18px 16px 90px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:14px 16px;margin-bottom:14px}
-h3{margin:0 0 10px;font-size:15px}
-button{font:inherit}
-.primary{background:var(--accent);border:1px solid var(--accent);color:#fff;
-  border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600}
-button.ghost{background:none;border:1px solid var(--line);border-radius:8px;
-  padding:5px 10px;cursor:pointer;color:var(--ink)}
+.switch input::after{content:'';position:absolute;top:3px;left:3px;width:16px;
+  height:16px;border-radius:50%;background:#fff;transition:left .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.switch input:checked::after{left:19px}
+main{max-width:1120px;margin:0 auto;padding:26px 28px 100px}
+.card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);
+  padding:20px 22px;margin-bottom:18px}
+h3{margin:0 0 12px;font-size:15px;font-weight:650;display:flex;
+  align-items:center;gap:6px;flex-wrap:wrap}
+button.primary{background:var(--accent);border:none;color:#fff;
+  border-radius:10px;padding:8px 18px;cursor:pointer;font-weight:600;
+  box-shadow:var(--shadow);letter-spacing:.2px}
+button.primary:hover{background:var(--accent-dark)}
+button.primary:disabled{opacity:.5;cursor:default}
+button.ghost{background:none;border:1px solid #c9ccd4;color:var(--ink);
+  border-radius:10px;padding:7px 13px;cursor:pointer;font-weight:500}
+button.ghost:hover{background:var(--chipbg)}
+button.ghost:disabled{opacity:.5;cursor:default}
 button.linkish{background:none;border:none;color:var(--accent);cursor:pointer;
-  padding:2px 4px;text-decoration:underline;font-size:12px}
+  padding:2px 4px;font-size:12px;font-weight:500;text-decoration:none}
+button.linkish:hover{text-decoration:underline}
 button.danger{color:var(--danger)}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;color:var(--dim);font-weight:500;font-size:12px;
-  padding:6px 8px;border-bottom:1px solid var(--line)}
-td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
-tr:last-child td{border-bottom:none}
+th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.6px;padding:8px 10px;
+  border-bottom:1px solid var(--line)}
+td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td,tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#f7f8fa}
 code{font-family:var(--mono);font-size:12px;background:var(--chipbg);
-  border-radius:4px;padding:1px 4px}
-.chip{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;
-  font-weight:600;color:#fff;margin:1px 2px 1px 0;white-space:nowrap}
+  border-radius:6px;padding:2px 5px}
+.chip{display:inline-block;border-radius:999px;padding:1px 10px;font-size:11px;
+  font-weight:600;color:#fff;margin:1px 3px 1px 0;white-space:nowrap}
 .chip.part{background:none!important;border:1px solid currentColor;color:inherit}
 .chip.flat{background:var(--chipbg)!important;color:var(--ink)}
-.badge{display:inline-block;border-radius:6px;padding:1px 8px;font-size:11px;
-  background:var(--chipbg);color:var(--dim)}
+.badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:11px;
+  font-weight:600;background:var(--chipbg);color:var(--dim)}
 .badge.warn{background:#fdecea;color:var(--danger)}
-.badge.good{background:#e6f4ea;color:var(--ok)}
-#banner{max-width:1100px;margin:12px auto 0;padding:0 16px}
+.badge.good{background:#e6f2ea;color:var(--ok)}
+#banner{max-width:1120px;margin:18px auto 0;padding:0 28px}
 #banner:empty{display:none}
-#banner .err{background:#fdecea;border:1px solid var(--danger);color:var(--danger);
-  border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px}
-form.stack{display:grid;gap:10px;max-width:560px}
-form.stack label{display:grid;gap:3px;font-size:12px;color:var(--dim)}
-form.stack input,form.stack select,form.stack textarea{font:inherit;padding:6px 8px;
-  border:1px solid var(--line);border-radius:8px;width:100%}
-form.stack textarea{font-family:var(--mono);font-size:12px;min-height:84px}
-.adv{border:1px dashed var(--line);border-radius:8px;padding:10px;margin-top:2px}
-.adv summary{cursor:pointer;color:var(--dim);font-size:12px}
-.adv .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-.adv .grid label{display:grid;gap:3px;font-size:12px;color:var(--dim)}
-.adv input,.adv select{font:inherit;padding:5px 6px;border:1px solid var(--line);
-  border-radius:6px}
-.adv .check{display:flex;align-items:center;gap:6px;color:var(--ink);font-size:13px}
+#banner .err{background:#fdecea;border:none;color:var(--danger);
+  border-radius:14px;padding:14px 18px;margin-bottom:14px;font-size:13px;
+  box-shadow:var(--shadow)}
+form.stack{display:grid;gap:12px;max-width:560px}
+form.stack label{display:grid;gap:4px;font-size:12px;color:var(--dim);font-weight:600}
+form.stack input,form.stack select,form.stack textarea{font:inherit;font-size:14px;
+  padding:9px 11px;border:1px solid #c9ccd4;border-radius:10px;width:100%;
+  background:var(--card)}
+form.stack textarea{font-family:var(--mono);font-size:12px;min-height:90px}
+.adv{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:2px;
+  background:#fafafa}
+.adv summary{cursor:pointer;color:var(--dim);font-size:12px;font-weight:600}
+.adv .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.adv .grid label{display:grid;gap:4px;font-size:12px;color:var(--dim);font-weight:600}
+.adv input,.adv select{font:inherit;padding:7px 9px;border:1px solid #c9ccd4;
+  border-radius:8px;background:var(--card)}
+.adv .check{display:flex;align-items:center;gap:7px;color:var(--ink);font-size:13px}
 .picker{position:relative;display:inline}
-.picker input{font:inherit;padding:6px 8px;border:1px solid var(--line);
-  border-radius:8px;width:100%}
+.picker input{font:inherit;font-size:14px;padding:9px 11px;border:1px solid #c9ccd4;
+  border-radius:10px;width:100%}
 .picker .pop{position:absolute;z-index:40;background:var(--card);
-  border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0002;
-  margin-top:4px;width:360px;max-height:320px;display:flex;flex-direction:column}
-.picker .pop input{margin:8px;border:1px solid var(--line);border-radius:6px;padding:5px 8px}
-.picker .pop ul{margin:0;padding:0 0 8px;overflow:auto;list-style:none}
-.picker .pop li{padding:6px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
-.picker .pop li:hover{background:var(--chipbg)}
+  border-radius:14px;box-shadow:0 10px 34px rgba(20,20,20,.18);
+  margin-top:6px;width:360px;max-height:320px;display:flex;flex-direction:column;overflow:hidden}
+.picker .pop input{margin:10px;border:1px solid #c9ccd4;border-radius:8px;padding:7px 10px}
+.picker .pop ul{margin:0;padding:0 0 10px;overflow:auto;list-style:none}
+.picker .pop li{padding:8px 14px;cursor:pointer;display:flex;gap:8px;align-items:center;
+  font-size:13px}
+.picker .pop li:hover{background:var(--accentbg)}
 .picker .pop li small{color:var(--dim);margin-left:auto}
-.permcols{display:grid;grid-template-columns:minmax(0,58%) minmax(0,42%);gap:14px}
-@media(max-width:860px){.permcols{grid-template-columns:1fr}}
-.tree{font-family:var(--mono);font-size:12.5px;max-height:60vh;overflow:auto;
-  border:1px solid var(--line);border-radius:8px;padding:6px 4px;background:var(--card)}
-.trow{display:flex;align-items:center;gap:6px;padding:2px 6px;border-radius:5px;
+.permcols{display:grid;grid-template-columns:minmax(0,58%) minmax(0,42%);gap:18px}
+@media(max-width:880px){.permcols{grid-template-columns:1fr}}
+.tree{font-family:var(--mono);font-size:12.5px;max-height:62vh;overflow:auto;
+  border:1px solid var(--line);border-radius:12px;padding:8px 6px;background:var(--card)}
+.trow{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:8px;
   cursor:pointer;white-space:nowrap}
 .trow:hover{background:var(--chipbg)}
-.trow.sel{background:#e8eefc;outline:1px solid var(--accent)}
+.trow.sel{background:var(--accentbg);outline:1px solid var(--accent)}
 .trow .nm{overflow:hidden;text-overflow:ellipsis}
 .trow .caret{width:12px;color:var(--dim);cursor:pointer;flex:none}
 .trow .dots{flex:1;min-width:12px}
 .file{color:var(--dim)}
-.detail h4{margin:2px 0 8px;font-family:var(--mono);font-size:12.5px;
-  word-break:break-all;font-weight:600}
-.mrow{display:flex;align-items:center;gap:8px;padding:7px 2px;
+.detail h4{margin:2px 0 10px;font-family:var(--mono);font-size:12.5px;
+  word-break:break-all;font-weight:700}
+.mrow{display:flex;align-items:center;gap:9px;padding:9px 2px;
   border-bottom:1px solid var(--line)}
 .mrow:last-child{border-bottom:none}
 .mrow .nm{font-weight:600}
 .mrow .st{font-size:11px;color:var(--dim);margin-left:auto;text-align:right}
-.mrow input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
-.entry{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px}
-.entry .paths{font-family:var(--mono);font-size:12px;margin:4px 0}
+.mrow input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent)}
+.entry{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.entry .paths{font-family:var(--mono);font-size:12px;margin:6px 0}
 .entry .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.entry .ops{margin-left:auto;display:flex;gap:6px}
-.statusgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.entry .ops{margin-left:auto;display:flex;gap:8px}
+.statusgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
 pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;
   margin:0}
 #tray{position:fixed;bottom:0;left:0;right:0;background:var(--card);
-  border-top:1px solid var(--accent);padding:10px 16px;z-index:30;
-  display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 -6px 18px #0001}
+  border-top:3px solid var(--accent);padding:12px 28px;z-index:30;
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow-up)}
 #tray.applied{border-top-color:var(--ok)}
-#tray .count{font-weight:700;color:var(--accent)}
+#tray .count{font-weight:700;color:var(--accent);font-size:13.5px}
 #tray ul{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:0;padding:0;
   color:var(--dim);font-size:12px}
-#tray li{background:var(--chipbg);border-radius:6px;padding:2px 8px}
-#tray li.ok{background:#e6f4ea;color:var(--ok)}
+#tray li{background:var(--chipbg);border-radius:8px;padding:3px 10px}
+#tray li.ok{background:#e6f2ea;color:var(--ok)}
 #tray button{margin-left:auto}
 #tray button+button{margin-left:0}
-tr.staged td, .entry.staged{background:#fffaf0;box-shadow:inset 3px 0 0 #d9a03f}
-.badge.stagedmark{background:#fdeeca;color:#91600b;margin-left:6px}
-#syncDrawer{position:fixed;bottom:0;left:0;right:0;background:#111722;color:#dce3f0;
-  z-index:25;padding:10px 16px;max-height:45vh;display:flex;flex-direction:column}
+#syncDrawer{position:fixed;bottom:0;left:0;right:0;background:#191c22;color:#e4e8f0;
+  z-index:25;padding:12px 28px;max-height:45vh;display:flex;flex-direction:column}
 #syncDrawer[hidden]{display:none}
 #syncDrawer .head{display:flex;align-items:center;gap:10px;font-weight:600}
-#syncDrawer pre{overflow:auto;flex:1;margin-top:8px;font-size:12px}
-#syncDrawer button{margin-left:auto;background:none;border:none;color:#dce3f0;
-  font-size:16px;cursor:pointer}
-dialog{border:1px solid var(--line);border-radius:12px;max-width:90vw;width:860px;
-  padding:16px}
-dialog::backdrop{background:#0006}
-dialog h3{margin:0 0 10px}
-dialog pre{max-height:65vh;overflow:auto;background:var(--bg);padding:10px;
-  border-radius:8px}
-dialog .row{display:flex;justify-content:flex-end;margin-top:10px}
-#toasts{position:fixed;top:12px;right:12px;z-index:60;display:flex;
-  flex-direction:column;gap:8px;max-width:420px}
-.toast{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ok);
-  border-radius:10px;padding:10px 14px;box-shadow:0 8px 20px #0002;font-size:13px}
+#syncDrawer pre{overflow:auto;flex:1;margin-top:10px;font-size:12px;
+  font-family:var(--mono)}
+#syncDrawer button{margin-left:auto;background:none;border:none;color:#e4e8f0;
+  font-size:18px;cursor:pointer}
+dialog{border:none;border-radius:16px;max-width:90vw;width:860px;
+  padding:20px;box-shadow:0 24px 80px rgba(20,20,20,.3)}
+dialog::backdrop{background:rgba(20,20,20,.35)}
+dialog h3{margin:0 0 12px}
+dialog pre{max-height:65vh;overflow:auto;background:var(--bg);padding:12px;
+  border-radius:10px}
+dialog .row{display:flex;justify-content:flex-end;margin-top:12px}
+#toasts{position:fixed;top:14px;right:14px;z-index:60;display:flex;
+  flex-direction:column;gap:10px;max-width:440px}
+.toast{background:var(--card);border-radius:12px;padding:12px 16px;
+  box-shadow:0 8px 28px rgba(20,20,20,.16);font-size:13px;
+  border-left:4px solid var(--ok)}
 .toast.err{border-left-color:var(--danger);color:var(--danger)}
-.hint{color:var(--dim);font-size:12px;margin:6px 0}
-.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--accent);
+.hint{color:var(--dim);font-size:12px;margin:8px 0}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--accent);
   border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;
   vertical-align:-2px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
+.graphwrap{position:relative;height:62vh;min-height:420px;border-radius:12px;
+  background:var(--card);overflow:hidden;touch-action:none;
+  box-shadow:inset 0 0 0 1px var(--line)}
+#graphCanvas{width:100%;height:100%;display:block;cursor:grab}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--dim);
+  align-items:center;margin:2px 0 12px}
+.legend .sw{display:inline-block;width:22px;height:0;border-top:2.5px solid #98a0ab;
+  vertical-align:middle;margin-right:6px;border-radius:2px}
+.legend .dot{display:inline-block;width:10px;height:10px;border-radius:50%;
+  vertical-align:-1px;margin-right:6px}
+#graphDetail{position:absolute;top:12px;right:12px;width:min(330px,62%);margin:0;
+  max-height:calc(100% - 24px);overflow:auto;box-shadow:0 10px 34px rgba(20,20,20,.2)}
+#graphTip{position:fixed;z-index:50;background:var(--card);
+  border-radius:10px;padding:7px 11px;font-size:12px;pointer-events:none;
+  box-shadow:0 10px 30px rgba(20,20,20,.2);max-width:340px;display:none}
+tr.staged td,.entry.staged{background:#fffaf0;box-shadow:inset 4px 0 0 #d9a03f}
+.badge.stagedmark{background:#fdeeca;color:#8a5c00;margin-left:6px}
 </style>
 </head>
 <body>
@@ -169,6 +210,7 @@ dialog .row{display:flex;justify-content:flex-end;margin-top:10px}
   <nav>
     <button data-tab="maps" class="on">Maps</button>
     <button data-tab="permissions">Permissions</button>
+    <button data-tab="graph">Graph</button>
     <button data-tab="status">Status</button>
   </nav>
   <label class="switch" id="watchSwitch" title="watch off">
@@ -216,6 +258,24 @@ dialog .row{display:flex;justify-content:flex-end;margin-top:10px}
     </div>
     <div class="card" id="permForm" hidden></div>
   </section>
+  <section id="tab-graph" hidden>
+    <div class="card">
+      <h3>Repository graph
+        <button class="ghost" id="graphFit" style="margin-left:8px">Fit</button>
+        <button class="ghost" id="graphRelayout">Re-layout</button>
+      </h3>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accentbg);border:1.5px solid var(--accent)"></span>source side (from)</span>
+        <span><span class="dot" style="background:#fff;border:1.5px solid #98a0ab"></span>collaborator side (to)</span>
+        <span><span class="sw" style="border-color:#98a0ab"></span>no permission granted yet</span>
+        <span>edge color = map · drag to arrange · wheel zooms · click for details</span>
+      </div>
+      <div class="graphwrap" id="graphwrap">
+        <canvas id="graphCanvas"></canvas>
+        <div class="card detail" id="graphDetail" hidden></div>
+      </div>
+    </div>
+  </section>
   <section id="tab-status" hidden>
     <div class="card">
       <h3>Status <button class="ghost" id="statusRefresh">Refresh</button></h3>
@@ -241,6 +301,7 @@ dialog .row{display:flex;justify-content:flex-end;margin-top:10px}
   <div class="row"><button class="ghost" onclick="document.getElementById('diffDialog').close()">Close</button></div>
 </dialog>
 <div id="toasts"></div>
+<div id="graphTip"></div>
 <script>
 'use strict';
 const S = {
@@ -306,8 +367,15 @@ function chip(name, extra) {
   return `<span class="chip ${extra || ''}" style="${style}">${esc(name)}</span>`;
 }
 function repoOf(loc) {
-  const parts = String(loc || '').replace('https://github.com/', '').split('/');
+  const raw = String(loc || '').replace('https://github.com/', '');
+  if (raw.startsWith('/')) return raw;
+  const parts = raw.split('/');
   return parts.length >= 2 ? parts.slice(0, 2).join('/') : '';
+}
+function prefixOf(loc) {
+  const raw = String(loc || '').replace('https://github.com/', '');
+  const parts = raw.split('/');
+  return parts.length > 2 ? parts.slice(2).join('/') : '';
 }
 
 async function bootstrap() {
@@ -473,7 +541,7 @@ async function discard() {
 function setTab(tab) {
   S.tab = tab;
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-  for (const id of ['maps', 'permissions', 'status']) $('tab-' + id).hidden = id !== tab;
+  for (const id of ['maps', 'permissions', 'graph', 'status']) $('tab-' + id).hidden = id !== tab;
   renderTab();
 }
 function renderTab() {
@@ -482,6 +550,7 @@ function renderTab() {
     renderPermOptions(); renderPermList(); renderTree(); renderDetail();
     if (!S.tree.files && !S.tree.loading && $('treeRepo').value) loadTree();
   }
+  if (S.tab === 'graph') renderGraph();
   if (S.tab === 'status') loadStatus();
 }
 
@@ -840,6 +909,334 @@ function permForm(index) {
   };
 }
 
+let graph = null;
+
+function patternsForMap(name) {
+  const out = [];
+  for (const p of S.model.permissions)
+    if (p.maps.includes(name))
+      out.push(...p.paths.map((path) => ({repo: p.repo || null, path})));
+  return out;
+}
+
+function graphSignature() {
+  return JSON.stringify([S.model.maps, S.model.permissions]);
+}
+
+function buildGraph(previous) {
+  const nodes = new Map();
+  const place = (id) => {
+    if (nodes.has(id)) return nodes.get(id);
+    const owner = id.includes('/') && !id.startsWith('/') ? id.split('/')[0] : '';
+    const label = id.startsWith('/') ? id.split('/').filter(Boolean).slice(-2).join('/') : id.split('/')[1];
+    const angle = nodes.size * 2.399;
+    const node = {id, owner, label, x: 340 * Math.cos(angle), y: 340 * Math.sin(angle),
+                  from_side: false, to_side: false, degree: 0};
+    nodes.set(id, node);
+    return node;
+  };
+  const edges = S.model.maps.map((m) => {
+    const from = place(repoOf(m.from)), to = place(repoOf(m.to));
+    from.from_side = true;
+    to.to_side = true;
+    from.degree++;
+    to.degree++;
+    return {map: m.name, from, to, from_loc: m.from, to_loc: m.to,
+            from_prefix: prefixOf(m.from), to_prefix: prefixOf(m.to),
+            bi: m.bi_directional, merge: m.merge, conflict: m.conflict,
+            from_branch: m.from_branch, to_branch: m.to_branch,
+            patterns: patternsForMap(m.name)};
+  });
+  const groups = new Map();
+  for (const edge of edges) {
+    const key = edge.from === edge.to ? edge.map : [edge.from.id, edge.to.id].sort().join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(edge);
+  }
+  for (const list of groups.values())
+    list.forEach((edge, i) => {
+      edge.curve = list.length === 1 ? 0 : (i - (list.length - 1) / 2) * 0.22;
+      edge.loop = edge.from === edge.to;
+    });
+  const view = {x: 0, y: 0, k: 1};
+  if (previous) {
+    for (const node of nodes.values()) {
+      const old = previous.nodeById.get(node.id);
+      if (old) Object.assign(node, {x: old.x, y: old.y});
+    }
+    Object.assign(view, previous.view);
+  }
+  return {sig: graphSignature(), nodes: [...nodes.values()], edges,
+          nodeById: nodes, view, alpha: previous ? 0.6 : 1,
+          selected: null, hover: null, drag: null, pan: null, raf: null};
+}
+
+function renderGraph() {
+  const canvas = $('graphCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $('graphTip').style.display = 'none';
+  if (!S.model.maps.length) {
+    graph = null;
+    $('graphDetail').hidden = true;
+    ctx.fillStyle = '#5b6270';
+    ctx.font = '13px Ubuntu, system-ui, sans-serif';
+    ctx.fillText('No maps yet — add one in the Maps tab.', 14, 26);
+    return;
+  }
+  const sig = graphSignature();
+  if (!graph || graph.sig !== sig) {
+    graph = buildGraph(graph);
+    if (!S.graphFitted) { fitGraph(); S.graphFitted = true; }
+  }
+  renderGraphDetail();
+  if (!graph.raf) graph.raf = requestAnimationFrame(tickGraph);
+}
+
+function stepGraph() {
+  if (graph.alpha <= 0) return;
+  const nodes = graph.nodes, edges = graph.edges;
+  const KR = 2300, KS = 0.055, L = 165, KG = 0.004;
+  for (const node of nodes) { node.fx = 0; node.fy = 0; }
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      let dx = a.x - b.x, dy = a.y - b.y;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < 1) { dx = (i - j) || 0.5; dy = 1; d2 = dx * dx + dy * dy; }
+      const f = KR / d2;
+      const d = Math.sqrt(d2);
+      a.fx += (dx / d) * f; a.fy += (dy / d) * f;
+      b.fx -= (dx / d) * f; b.fy -= (dy / d) * f;
+    }
+  }
+  for (const edge of edges) {
+    const a = edge.from, b = edge.to;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.max(1, Math.hypot(dx, dy));
+    const f = KS * (d - L * (edge.curve ? 1.25 : 1));
+    a.fx += (dx / d) * f * d; a.fy += (dy / d) * f * d;
+    b.fx -= (dx / d) * f * d; b.fy -= (dy / d) * f * d;
+  }
+  for (const node of nodes) {
+    node.fx -= node.x * KG * 60;
+    node.fy -= node.y * KG * 60;
+    if (graph.drag && graph.drag.node === node) continue;
+    node.x += Math.max(-42, Math.min(42, node.fx * graph.alpha));
+    node.y += Math.max(-42, Math.min(42, node.fy * graph.alpha));
+  }
+  graph.alpha = Math.max(0, graph.alpha * 0.97 - 0.0008);
+  if (graph.alpha < 0.008) graph.alpha = 0;
+}
+
+function edgeGeometry(edge) {
+  const a = edge.from, b = edge.to;
+  if (edge.loop) return null;
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const d = Math.max(1, Math.hypot(dx, dy));
+  const offset = edge.curve * d;
+  return {a, b, cx: mx - (dy / d) * offset, cy: my + (dx / d) * offset};
+}
+
+function tickGraph() {
+  graph.raf = null;
+  if (S.tab !== 'graph' || !graph) return;
+  stepGraph();
+  drawGraph();
+  graph.raf = requestAnimationFrame(tickGraph);
+}
+
+function graphTransform() {
+  const canvas = $('graphCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  return {dpr, w, h, k: graph.view.k, cx: w / 2, cy: h / 2};
+}
+
+function drawGraph() {
+  const canvas = $('graphCanvas');
+  const ctx = canvas.getContext('2d');
+  const {dpr, w, h} = graphTransform();
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(dpr * graph.view.k, 0, 0, dpr * graph.view.k,
+                   dpr * (w / 2 + graph.view.x * graph.view.k),
+                   dpr * (h / 2 + graph.view.y * graph.view.k));
+  const fade = graph.selected ? 0.22 : 1;
+  const involved = (item) => {
+    if (!graph.selected) return true;
+    const sel = graph.selected;
+    if (sel.node) return sel.node === item.from || sel.node === item.to ||
+                       (sel.node === item);
+    return sel.edge === item || sel.edge.from === item || sel.edge.to === item;
+  };
+  for (const edge of graph.edges) {
+    const dim = involved(edge) ? 1 : fade;
+    const color = edge.patterns.length ? mapColor(edge.map) : '#b6bcc6';
+    ctx.globalAlpha = dim;
+    if (edge.loop) { drawLoop(edge, ctx, color); continue; }
+    const g = edgeGeometry(edge);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = (graph.selected && graph.selected.edge === edge) ? 3.2 : 1.8;
+    if (!edge.patterns.length) ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(g.a.x, g.a.y);
+    ctx.quadraticCurveTo(g.cx, g.cy, g.b.x, g.b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const r = 15 + Math.min(8, edge.from.degree * 2);
+    arrowHead(ctx, g.b.x, g.b.y, g.cx, g.cy, color, r + 3);
+    if (edge.bi) arrowHead(ctx, g.a.x, g.a.y, g.cx, g.cy, color,
+                           15 + Math.min(8, edge.to.degree * 2) + 3);
+    const lx = 0.25 * g.a.x + 0.5 * g.cx + 0.25 * g.b.x;
+    const ly = 0.25 * g.a.y + 0.5 * g.cy + 0.25 * g.b.y;
+    ctx.font = '11.5px ui-monospace,monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const text = ctx.measureText(edge.map);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(lx - text.width / 2 - 4, ly - 8, text.width + 8, 16);
+    ctx.fillStyle = edge.patterns.length ? '#333a45' : '#8892a0';
+    ctx.fillText(edge.map, lx, ly);
+    ctx.globalAlpha = 1;
+  }
+  for (const node of graph.nodes) {
+    const dim = involved(node) ? 1 : fade;
+    ctx.globalAlpha = dim;
+    const r = 15 + Math.min(8, node.degree * 2);
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = node.from_side && !node.to_side ? '#faecec' : '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = node.from_side && !node.to_side ? '#911515' : '#98a0ab';
+    if (graph.selected && graph.selected.node === node) { ctx.lineWidth = 4; }
+    ctx.stroke();
+    ctx.font = '600 12.5px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#1d2430';
+    ctx.fillText(node.label, node.x, node.y + r + 4);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawLoop(edge, ctx, color) {
+  const n = edge.from, loopIndex = edge.curve || 0;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  if (!edge.patterns.length) ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.arc(n.x, n.y, 34, loopIndex - 0.5, loopIndex + 4.5);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function arrowHead(ctx, x, y, fromX, fromY, color, trim) {
+  let dx = x - fromX, dy = y - fromY;
+  const d = Math.hypot(dx, dy) || 1;
+  dx /= d; dy /= d;
+  const tx = x - dx * trim, ty = y - dy * trim;
+  const size = 7 / graph.view.k;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(tx + dx * size, ty + dy * size);
+  ctx.lineTo(tx - dy * size * 0.55 - dx * size * 0.4, ty + dx * size * 0.55 - dy * size * 0.4);
+  ctx.lineTo(tx + dy * size * 0.55 - dx * size * 0.4, ty - dx * size * 0.55 - dy * size * 0.4);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function fitGraph() {
+  if (!graph || !graph.nodes.length) return;
+  const {w, h} = graphTransform();
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const node of graph.nodes) {
+    minX = Math.min(minX, node.x - 90); maxX = Math.max(maxX, node.x + 90);
+    minY = Math.min(minY, node.y - 70); maxY = Math.max(maxY, node.y + 70);
+  }
+  const k = Math.min(w / Math.max(1, maxX - minX), h / Math.max(1, maxY - minY), 1.6);
+  graph.view.k = Math.max(0.2, k);
+  graph.view.x = (minX + maxX) / 2;
+  graph.view.y = (minY + maxY) / 2;
+}
+
+function graphHit(wx, wy) {
+  for (let i = graph.nodes.length - 1; i >= 0; i--) {
+    const node = graph.nodes[i];
+    const r = 15 + Math.min(8, node.degree * 2) + 6 / graph.view.k;
+    if ((wx - node.x) ** 2 + (wy - node.y) ** 2 < r * r) return {node};
+  }
+  for (const edge of graph.edges) {
+    if (edge.loop) continue;
+    const g = edgeGeometry(edge);
+    for (let t = 0.05; t <= 0.951; t += 0.05) {
+      const x = (1 - t) ** 2 * g.a.x + 2 * (1 - t) * t * g.cx + t ** 2 * g.b.x;
+      const y = (1 - t) ** 2 * g.a.y + 2 * (1 - t) * t * g.cy + t ** 2 * g.b.y;
+      if ((wx - x) ** 2 + (wy - y) ** 2 < 36) return {edge};
+    }
+  }
+  return null;
+}
+
+function toWorld(event) {
+  const canvas = $('graphCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const mx = event.clientX - rect.left, my = event.clientY - rect.top;
+  return {x: (mx - rect.width / 2) / graph.view.k - graph.view.x,
+          y: (my - rect.height / 2) / graph.view.k - graph.view.y,
+          mx, my};
+}
+
+function graphTooltip(hit, event) {
+  const tip = $('graphTip');
+  if (!hit) { tip.style.display = 'none'; return; }
+  tip.style.display = 'block';
+  tip.style.left = Math.min(event.clientX + 14, window.innerWidth - 360) + 'px';
+  tip.style.top = (event.clientY + 16) + 'px';
+  tip.innerHTML = hit.node
+    ? `<b>${esc(hit.node.id)}</b>`
+    : `<b>map ${esc(hit.edge.map)}</b> · ${hit.edge.bi ? 'two-way' : 'one-way'}` +
+      ` · merge ${esc(hit.edge.merge)} · conflict ${esc(hit.edge.conflict)}` +
+      (hit.edge.patterns.length ? '' : ' · <i>no permission granted yet</i>');
+}
+
+function renderGraphDetail() {
+  const box = $('graphDetail');
+  const sel = graph && graph.selected;
+  if (!sel) { box.hidden = true; return; }
+  box.hidden = false;
+  if (sel.node) {
+    const asFrom = graph.edges.filter((e) => e.from === sel.node).map((e) => e.map);
+    const asTo = graph.edges.filter((e) => e.to === sel.node).map((e) => e.map);
+    box.innerHTML = `
+      <h4 style="font-family:var(--mono);font-size:12.5px;margin:2px 0 8px">${esc(sel.node.id)}</h4>
+      ${!sel.node.id.startsWith('/') && sel.node.id.includes('/')
+        ? `<p class="hint" style="margin:0 0 8px"><a href="https://github.com/${esc(sel.node.id)}" target="_blank">open on GitHub ↗</a></p>` : ''}
+      <p class="hint" style="margin:0 0 4px">source side of: ${asFrom.length ? asFrom.map((m) => chip(m, 'flat')).join('') : '—'}</p>
+      <p class="hint" style="margin:0 0 4px">target side of: ${asTo.length ? asTo.map((m) => chip(m, 'flat')).join('') : '—'}</p>
+      <p class="hint" style="margin:0">${sel.node.degree} map connection(s)</p>`;
+    return;
+  }
+  const edge = sel.edge;
+  const staged = pendingMapNames().has(edge.map);
+  box.innerHTML = `
+    <h4 style="margin:2px 0 8px">${chip(edge.map)} map ${esc(edge.map)}
+      ${staged ? '<span class="badge stagedmark">staged</span>' : ''}</h4>
+    <p class="hint" style="margin:0 0 4px"><b>from</b> <code>${esc(edge.from_loc)}</code>${edge.from_branch !== 'main' ? ' · ' + esc(edge.from_branch) : ''}</p>
+    <p class="hint" style="margin:0 0 4px"><b>to</b> <code>${esc(edge.to_loc)}</code>${edge.to_branch !== 'main' ? ' · ' + esc(edge.to_branch) : ''}</p>
+    <p class="hint" style="margin:0 0 6px">${esc(modeText({merge: edge.merge, conflict: edge.conflict, bi_directional: edge.bi}))}</p>
+    ${edge.patterns.length
+      ? `<div class="paths" style="font-family:var(--mono);font-size:12px">${edge.patterns.map((p) => esc((p.repo ? p.repo + ':' : '') + p.path)).join('<br>')}</div>`
+      : '<p class="hint" style="margin:4px 0;color:var(--danger)">No permission granted — nothing syncs through this map yet.</p>'}`;
+}
+
 async function loadStatus() {
   if (S.statusBusy) return;
   S.statusBusy = true;
@@ -968,6 +1365,78 @@ $('syncClose').onclick = () => { $('syncDrawer').hidden = true; };
 $('watchOn').onchange = toggleWatch;
 setInterval(pollWatch, 5000);
 pollWatch();
+$('graphFit').onclick = () => { if (graph) { fitGraph(); drawGraph(); } };
+$('graphRelayout').onclick = () => {
+  if (!graph) return;
+  for (const node of graph.nodes) {
+    const angle = Math.random() * Math.PI * 2;
+    node.x = 340 * Math.cos(angle);
+    node.y = 340 * Math.sin(angle);
+  }
+  graph.alpha = 1;
+  if (!graph.raf) graph.raf = requestAnimationFrame(tickGraph);
+};
+
+const graphCanvas = $('graphCanvas');
+let graphGesture = null;
+graphCanvas.addEventListener('pointerdown', (event) => {
+  if (!graph) return;
+  graphCanvas.setPointerCapture(event.pointerId);
+  const world = toWorld(event);
+  const hit = graphHit(world.x, world.y);
+  graphGesture = {hit, moved: false, sx: world.mx, sy: world.my};
+  if (hit && hit.node) {
+    graph.drag = {node: hit.node, dx: hit.node.x - world.x, dy: hit.node.y - world.y};
+    graph.alpha = Math.max(graph.alpha, 0.45);
+  } else {
+    graphGesture.panning = {mx: world.mx, my: world.my, x: graph.view.x, y: graph.view.y};
+  }
+});
+graphCanvas.addEventListener('pointermove', (event) => {
+  if (!graph) return;
+  const world = toWorld(event);
+  if (!graphGesture) {
+    const hit = graphHit(world.x, world.y);
+    graphCanvas.style.cursor = hit ? 'pointer' : 'grab';
+    graphTooltip(hit, event);
+    return;
+  }
+  if (Math.hypot(world.mx - graphGesture.sx, world.my - graphGesture.sy) > 4)
+    graphGesture.moved = true;
+  if (graph.drag) {
+    graph.drag.node.x = world.x + graph.drag.dx;
+    graph.drag.node.y = world.y + graph.drag.dy;
+    graph.alpha = Math.max(graph.alpha, 0.4);
+  } else if (graphGesture.panning) {
+    graph.view.x = graphGesture.panning.x - (world.mx - graphGesture.panning.mx) / graph.view.k;
+    graph.view.y = graphGesture.panning.y - (world.my - graphGesture.panning.my) / graph.view.k;
+  }
+});
+graphCanvas.addEventListener('pointerup', (event) => {
+  if (!graph) return;
+  if (graphGesture && !graphGesture.moved) {
+    graph.selected = graphGesture.hit;
+    renderGraphDetail();
+  }
+  graph.drag = null;
+  graphGesture = null;
+  $('graphTip').style.display = 'none';
+});
+graphCanvas.addEventListener('pointerleave', () => {
+  $('graphTip').style.display = 'none';
+});
+graphCanvas.addEventListener('wheel', (event) => {
+  if (!graph) return;
+  event.preventDefault();
+  const before = toWorld(event);
+  graph.view.k = Math.max(0.15, Math.min(4, graph.view.k *
+    (event.deltaY < 0 ? 1.12 : 0.89)));
+  const after = toWorld(event);
+  graph.view.x += before.x - after.x;
+  graph.view.y += before.y - after.y;
+}, {passive: false});
+new ResizeObserver(() => { if (S.tab === 'graph' && graph) drawGraph(); })
+  .observe($('graphwrap'));
 window.addEventListener('beforeunload', (e) => {
   if (S.pending.length) { e.preventDefault(); e.returnValue = ''; }
 });
