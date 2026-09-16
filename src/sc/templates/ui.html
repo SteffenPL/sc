@@ -1,0 +1,814 @@
+<!doctype html>
+<!-- sc ui: single-file editor for the sharing configuration (maps and
+     permissions). Served by `sc ui`; edits are buffered here as operations
+     and committed on demand. No external assets. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sc ui</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --line:#d9dce2; --ink:#1d2430; --dim:#68707e;
+  --accent:#2456d6; --danger:#b3261e; --ok:#1b6e3d; --chipbg:#eef1f6;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+  background:var(--card);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.brand{font-weight:700;font-size:16px}
+.brand span{color:var(--accent)}
+.brand small{color:var(--dim);font-weight:400;margin-left:6px}
+.cfg{color:var(--dim);display:flex;align-items:center;gap:8px;min-width:0}
+.cfg code{font-family:var(--mono);font-size:12px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;max-width:42vw}
+nav{display:flex;gap:4px;margin-left:auto}
+nav button{border:1px solid transparent;background:none;padding:6px 12px;
+  border-radius:8px;cursor:pointer;font-size:14px;color:var(--dim)}
+nav button.on{background:var(--chipbg);color:var(--ink);font-weight:600}
+#syncBtn{border:1px solid var(--accent);color:var(--accent);background:none;
+  border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600}
+#syncBtn:disabled{opacity:.5;cursor:default}
+main{max-width:1100px;margin:0 auto;padding:18px 16px 90px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:14px}
+h3{margin:0 0 10px;font-size:15px}
+button{font:inherit}
+.primary{background:var(--accent);border:1px solid var(--accent);color:#fff;
+  border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600}
+button.ghost{background:none;border:1px solid var(--line);border-radius:8px;
+  padding:5px 10px;cursor:pointer;color:var(--ink)}
+button.linkish{background:none;border:none;color:var(--accent);cursor:pointer;
+  padding:2px 4px;text-decoration:underline;font-size:12px}
+button.danger{color:var(--danger)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:var(--dim);font-weight:500;font-size:12px;
+  padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+code{font-family:var(--mono);font-size:12px;background:var(--chipbg);
+  border-radius:4px;padding:1px 4px}
+.chip{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;
+  font-weight:600;color:#fff;margin:1px 2px 1px 0;white-space:nowrap}
+.chip.part{background:none!important;border:1px solid currentColor;color:inherit}
+.chip.flat{background:var(--chipbg)!important;color:var(--ink)}
+.badge{display:inline-block;border-radius:6px;padding:1px 8px;font-size:11px;
+  background:var(--chipbg);color:var(--dim)}
+.badge.warn{background:#fdecea;color:var(--danger)}
+.badge.good{background:#e6f4ea;color:var(--ok)}
+#banner{max-width:1100px;margin:12px auto 0;padding:0 16px}
+#banner:empty{display:none}
+#banner .err{background:#fdecea;border:1px solid var(--danger);color:var(--danger);
+  border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px}
+form.stack{display:grid;gap:10px;max-width:560px}
+form.stack label{display:grid;gap:3px;font-size:12px;color:var(--dim)}
+form.stack input,form.stack select,form.stack textarea{font:inherit;padding:6px 8px;
+  border:1px solid var(--line);border-radius:8px;width:100%}
+form.stack textarea{font-family:var(--mono);font-size:12px;min-height:84px}
+.adv{border:1px dashed var(--line);border-radius:8px;padding:10px;margin-top:2px}
+.adv summary{cursor:pointer;color:var(--dim);font-size:12px}
+.adv .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.adv .grid label{display:grid;gap:3px;font-size:12px;color:var(--dim)}
+.adv input,.adv select{font:inherit;padding:5px 6px;border:1px solid var(--line);
+  border-radius:6px}
+.adv .check{display:flex;align-items:center;gap:6px;color:var(--ink);font-size:13px}
+.picker{position:relative;display:inline}
+.picker input{font:inherit;padding:6px 8px;border:1px solid var(--line);
+  border-radius:8px;width:100%}
+.picker .pop{position:absolute;z-index:40;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0002;
+  margin-top:4px;width:360px;max-height:320px;display:flex;flex-direction:column}
+.picker .pop input{margin:8px;border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+.picker .pop ul{margin:0;padding:0 0 8px;overflow:auto;list-style:none}
+.picker .pop li{padding:6px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.picker .pop li:hover{background:var(--chipbg)}
+.picker .pop li small{color:var(--dim);margin-left:auto}
+.permcols{display:grid;grid-template-columns:minmax(0,58%) minmax(0,42%);gap:14px}
+@media(max-width:860px){.permcols{grid-template-columns:1fr}}
+.tree{font-family:var(--mono);font-size:12.5px;max-height:60vh;overflow:auto;
+  border:1px solid var(--line);border-radius:8px;padding:6px 4px;background:var(--card)}
+.trow{display:flex;align-items:center;gap:6px;padding:2px 6px;border-radius:5px;
+  cursor:pointer;white-space:nowrap}
+.trow:hover{background:var(--chipbg)}
+.trow.sel{background:#e8eefc;outline:1px solid var(--accent)}
+.trow .nm{overflow:hidden;text-overflow:ellipsis}
+.trow .caret{width:12px;color:var(--dim);cursor:pointer;flex:none}
+.trow .dots{flex:1;min-width:12px}
+.file{color:var(--dim)}
+.detail h4{margin:2px 0 8px;font-family:var(--mono);font-size:12.5px;
+  word-break:break-all;font-weight:600}
+.mrow{display:flex;align-items:center;gap:8px;padding:7px 2px;
+  border-bottom:1px solid var(--line)}
+.mrow:last-child{border-bottom:none}
+.mrow .nm{font-weight:600}
+.mrow .st{font-size:11px;color:var(--dim);margin-left:auto;text-align:right}
+.mrow input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+.entry{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px}
+.entry .paths{font-family:var(--mono);font-size:12px;margin:4px 0}
+.entry .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.entry .ops{margin-left:auto;display:flex;gap:6px}
+.statusgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;
+  margin:0}
+#tray{position:fixed;bottom:0;left:0;right:0;background:var(--card);
+  border-top:1px solid var(--accent);padding:10px 16px;z-index:30;
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 -6px 18px #0001}
+#tray .count{font-weight:700;color:var(--accent)}
+#tray ul{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:0;padding:0;
+  color:var(--dim);font-size:12px}
+#tray li{background:var(--chipbg);border-radius:6px;padding:2px 8px}
+#tray button{margin-left:auto}
+#tray button+button{margin-left:0}
+#syncDrawer{position:fixed;bottom:0;left:0;right:0;background:#111722;color:#dce3f0;
+  z-index:25;padding:10px 16px;max-height:45vh;display:flex;flex-direction:column}
+#syncDrawer[hidden]{display:none}
+#syncDrawer .head{display:flex;align-items:center;gap:10px;font-weight:600}
+#syncDrawer pre{overflow:auto;flex:1;margin-top:8px;font-size:12px}
+#syncDrawer button{margin-left:auto;background:none;border:none;color:#dce3f0;
+  font-size:16px;cursor:pointer}
+dialog{border:1px solid var(--line);border-radius:12px;max-width:90vw;width:860px;
+  padding:16px}
+dialog::backdrop{background:#0006}
+dialog h3{margin:0 0 10px}
+dialog pre{max-height:65vh;overflow:auto;background:var(--bg);padding:10px;
+  border-radius:8px}
+dialog .row{display:flex;justify-content:flex-end;margin-top:10px}
+#toasts{position:fixed;top:12px;right:12px;z-index:60;display:flex;
+  flex-direction:column;gap:8px;max-width:420px}
+.toast{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ok);
+  border-radius:10px;padding:10px 14px;box-shadow:0 8px 20px #0002;font-size:13px}
+.toast.err{border-left-color:var(--danger);color:var(--danger)}
+.hint{color:var(--dim);font-size:12px;margin:6px 0}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--accent);
+  border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;
+  vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">sc <span>ui</span><small id="version"></small></div>
+  <div class="cfg"><code id="cfgPath"></code><span id="gitBadge" class="badge"></span></div>
+  <nav>
+    <button data-tab="maps" class="on">Maps</button>
+    <button data-tab="permissions">Permissions</button>
+    <button data-tab="status">Status</button>
+  </nav>
+  <button id="syncBtn">Sync now</button>
+</header>
+<div id="banner"></div>
+<main>
+  <section id="tab-maps">
+    <div class="card" id="mapForm" hidden></div>
+    <div class="card">
+      <h3>Maps</h3>
+      <button class="primary" id="addMapBtn">Add map</button>
+      <p class="hint">A map pairs two repositories; <code>Owner/Repo/folder</code>
+      gives a folder prefix. Map names key the private <code>sync-state/&lt;name&gt;</code>
+      baselines — do not rename or remove them casually.</p>
+      <div id="mapsList"></div>
+    </div>
+  </section>
+  <section id="tab-permissions" hidden>
+    <div class="card">
+      <h3>Vault tree &amp; active maps</h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label>repository <select id="treeRepo" style="font:inherit;padding:6px;border:1px solid var(--line);border-radius:8px"></select></label>
+        <button class="ghost" id="treeReload">Reload tree</button>
+        <span class="hint" id="treeHint" style="margin:0"></span>
+      </div>
+      <p class="hint">Badges show which maps are active per folder/file. Solid
+      covers everything beneath, outlined is partial. Select a row to grant or
+      revoke per map; folders grant <code>folder/**</code> so future files sync
+      automatically. Revoking removes the files from the other side; old
+      copies are never taken back.</p>
+      <div class="permcols">
+        <div>
+          <div class="tree" id="tree"><span class="hint">choose a repository and load the tree</span></div>
+          <div style="margin-top:14px">
+            <h3>Pattern entries</h3>
+            <div id="permList"></div>
+            <button class="ghost" id="addPermBtn">Add pattern entry</button>
+          </div>
+        </div>
+        <div class="card detail" id="detail" hidden></div>
+      </div>
+    </div>
+    <div class="card" id="permForm" hidden></div>
+  </section>
+  <section id="tab-status" hidden>
+    <div class="card">
+      <h3>Status <button class="ghost" id="statusRefresh">Refresh</button></h3>
+      <div id="statusBody"><span class="hint">loading…</span></div>
+    </div>
+  </section>
+</main>
+<div id="tray" hidden>
+  <span class="count" id="trayCount"></span>
+  <ul id="trayOps"></ul>
+  <button class="ghost" id="previewBtn">Preview diff</button>
+  <button class="primary" id="commitBtn">Commit</button>
+  <button class="ghost" id="discardBtn">Discard</button>
+</div>
+<div id="syncDrawer" hidden>
+  <div class="head"><span class="spin" id="syncSpin"></span><span id="syncState">syncing…</span>
+    <button id="syncClose">×</button></div>
+  <pre id="syncLog"></pre>
+</div>
+<dialog id="diffDialog">
+  <h3>Pending changes</h3>
+  <pre id="diffPre">nothing to do</pre>
+  <div class="row"><button class="ghost" onclick="document.getElementById('diffDialog').close()">Close</button></div>
+</dialog>
+<div id="toasts"></div>
+<script>
+'use strict';
+const S = {
+  token: '', fileVersion: '', git: null,
+  model: {maps: [], permissions: [], errors: []},
+  pending: [], tab: 'maps', repos: null,
+  tree: {repo: null, files: null, cov: null, maps: [], truncated: false,
+         expanded: new Set(), selected: null, loading: false},
+  editing: {map: null, perm: null},
+  syncTimer: null,
+};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+  (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg, err) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), err ? 10000 : 6000);
+}
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-SC-Token': S.token},
+    body: JSON.stringify(body),
+  };
+  const res = await fetch(path, opts);
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = {ok: false, error: 'bad response'}; }
+  if (!res.ok) throw {status: res.status, data};
+  return data;
+}
+function fail(e) {
+  const d = e.data || {};
+  toast(d.error || (d.errors || []).join('; ') || 'request failed', true);
+  if (e.status === 409) {
+    if (confirm('The config file changed on disk since the page was loaded.\nReload now?')) location.reload();
+  }
+}
+function mapColor(name) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${h},52%,42%)`;
+}
+function chip(name, extra) {
+  const c = mapColor(name);
+  const style = extra === 'part' ? `color:${c}` : `background:${c}`;
+  return `<span class="chip ${extra || ''}" style="${style}">${esc(name)}</span>`;
+}
+function repoOf(loc) {
+  const parts = String(loc || '').replace('https://github.com/', '').split('/');
+  return parts.length >= 2 ? parts.slice(0, 2).join('/') : '';
+}
+
+async function bootstrap() {
+  try {
+    const d = await api('/api/bootstrap');
+    S.token = d.token;
+    S.fileVersion = d.file_version;
+    S.git = d.git;
+    S.model = d.model;
+    $('version').textContent = 'v' + d.version;
+    $('cfgPath').textContent = d.config_path;
+    $('commitBtn').textContent = d.git.repo ? 'Commit' : 'Save';
+    renderHeader();
+    renderTab();
+  } catch (e) { fail(e); }
+}
+function renderHeader() {
+  const g = S.git || {};
+  let text = g.repo ? `${g.branch || 'detached'}${g.head ? ' @ ' + g.head : ''}` : 'not a git repo';
+  let cls = 'badge';
+  if (g.repo && g.file_dirty) { text += ' · config modified'; cls += ' warn'; }
+  else if (g.repo && g.other_dirty) { text += ' · other changes present'; cls += ' warn'; }
+  else if (g.repo) cls += ' good';
+  $('gitBadge').className = cls;
+  $('gitBadge').textContent = text;
+  const errors = S.model.errors || [];
+  $('banner').innerHTML = errors.length
+    ? `<div class="err">Invalid configuration: ${esc(errors.join(' · '))}</div>` : '';
+}
+
+let previewTimer = null;
+function addOp(op) {
+  let key = null;
+  if (op.op === 'map_upsert' || op.op === 'map_remove') key = op.op + '|' + (op.entry?.name ?? op.name);
+  if (op.op === 'perm_grant' || op.op === 'perm_revoke')
+    key = 'permpath|' + op.repo + '|' + op.path + '|' + [...op.maps].sort().join(',');
+  if (key) {
+    const i = S.pending.findIndex((o) => opKeyOf(o) === key);
+    if (i >= 0) S.pending[i] = op; else S.pending.push(op);
+  } else S.pending.push(op);
+  renderTray();
+  schedulePreview();
+}
+function opKeyOf(op) {
+  if (op.op === 'map_upsert' || op.op === 'map_remove') return op.op + '|' + (op.entry?.name ?? op.name);
+  if (op.op === 'perm_grant' || op.op === 'perm_revoke')
+    return 'permpath|' + op.repo + '|' + op.path + '|' + [...op.maps].sort().join(',');
+  return null;
+}
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshPreview, 200);
+}
+async function refreshPreview() {
+  try {
+    const d = await api('/api/preview', {ops: S.pending});
+    S.model = d.model;
+    S.fileVersion = d.file_version;
+    renderHeader();
+    renderTab();
+    if (S.tab === 'permissions' && S.tree.repo) scheduleTree();
+  } catch (e) { fail(e); }
+}
+function renderTray() {
+  $('tray').hidden = !S.pending.length;
+  if (!S.pending.length) return;
+  $('trayCount').textContent = S.pending.length + ' pending change' + (S.pending.length > 1 ? 's' : '');
+  $('trayOps').innerHTML = S.pending.map(opSummary).map((s) => `<li>${esc(s)}</li>`).join('');
+}
+function opSummary(op) {
+  if (op.op === 'map_upsert') return 'map ' + op.entry.name;
+  if (op.op === 'map_remove') return 'remove map ' + op.name;
+  if (op.op === 'perm_grant') return 'grant ' + op.repo + ':' + op.path + ' → ' + op.maps.join(', ');
+  if (op.op === 'perm_revoke') return 'revoke ' + op.repo + ':' + op.path + ' ← ' + op.maps.join(', ');
+  if (op.op === 'perm_upsert') return op.index == null ? 'add pattern entry' : 'edit pattern entry #' + (op.index + 1);
+  if (op.op === 'perm_remove') return 'remove pattern entry #' + (op.index + 1);
+  return op.op;
+}
+async function commit() {
+  if (!S.pending.length) return;
+  if (S.model.errors && S.model.errors.length) { toast('Fix the configuration errors first.', true); return; }
+  if (S.git && S.git.repo && S.git.other_dirty)
+    if (!confirm('The config repository has other uncommitted changes.\nOnly the config file will be committed. Continue?')) return;
+  try {
+    const d = await api('/api/save',
+      {base_version: S.fileVersion, ops: S.pending, commit: true});
+    S.pending = [];
+    S.model = d.model;
+    S.fileVersion = d.file_version;
+    S.git = d.git;
+    renderHeader();
+    renderTray();
+    renderTab();
+    if (S.tab === 'permissions' && S.tree.repo) scheduleTree();
+    if (d.commit && d.commit.error) toast('File written, but commit failed: ' + d.commit.error, true);
+    else if (d.commit && d.commit.sha) toast('Committed ' + d.commit.sha + ': ' + d.commit.message);
+    else if (d.changed) toast('Saved (not in a git repository).');
+    else toast('Nothing changed.');
+  } catch (e) { fail(e); }
+}
+async function discard() {
+  if (!S.pending.length) return;
+  if (!confirm('Discard all pending changes?')) return;
+  S.pending = [];
+  renderTray();
+  await refreshPreview();
+}
+
+function setTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  for (const id of ['maps', 'permissions', 'status']) $('tab-' + id).hidden = id !== tab;
+  renderTab();
+}
+function renderTab() {
+  if (S.tab === 'maps') renderMaps();
+  if (S.tab === 'permissions') {
+    renderPermOptions(); renderPermList(); renderTree(); renderDetail();
+    if (!S.tree.files && !S.tree.loading && $('treeRepo').value) loadTree();
+  }
+  if (S.tab === 'status') loadStatus();
+}
+
+function modeText(m) {
+  return (m.bi_directional ? 'two-way' : 'one-way') + ' · merge ' + m.merge + ' · conflict ' + m.conflict;
+}
+function renderMaps() {
+  const rows = S.model.maps.map((m) => `
+    <tr><td><b>${esc(m.name)}</b></td>
+    <td><code>${esc(m.from)}</code><br>↕<br><code>${esc(m.to)}</code></td>
+    <td>${esc(modeText(m))}${m.from_branch !== 'main' || m.to_branch !== 'main' ? '<br><small>' + esc(m.from_branch) + ' ↔ ' + esc(m.to_branch) + '</small>' : ''}</td>
+    <td style="text-align:right"><button class="ghost" data-edit="${esc(m.name)}">Edit</button>
+    <button class="ghost danger" data-del="${esc(m.name)}">Delete</button></td></tr>`).join('');
+  $('mapsList').innerHTML = S.model.maps.length
+    ? `<table><tr><th>name</th><th>pairing</th><th>mode</th><th></th></tr>${rows}</table>`
+    : '<p class="hint">No maps yet — add one.</p>';
+  $('mapsList').querySelectorAll('[data-edit]').forEach((b) =>
+    b.onclick = () => mapForm(b.dataset.edit));
+  $('mapsList').querySelectorAll('[data-del]').forEach((b) =>
+    b.onclick = () => {
+      if (!confirm(`Remove map ${b.dataset.del}?\n\nThe sync-state/${b.dataset.del} baseline branch is kept; re-adding the map later requires --initialize.`)) return;
+      addOp({op: 'map_remove', name: b.dataset.del});
+      closeMapForm();
+    });
+}
+function closeMapForm() { $('mapForm').hidden = true; S.editing.map = null; }
+function mapForm(name) {
+  const m = name ? S.model.maps.find((x) => x.name === name) : null;
+  S.editing.map = name || null;
+  $('mapForm').innerHTML = `
+    <h3>${m ? 'Edit map ' + esc(m.name) : 'Add map'}</h3>
+    <form class="stack" id="mf">
+      <label>name
+        <input id="mfName" value="${esc(m?.name || '')}" ${m ? 'disabled title="names key sync-state baselines; remove + re-add (needs --initialize) to rename"' : ''}
+        placeholder="letters, digits, _ or -" required></label>
+      <label>from repository
+        <span class="picker"><input id="mfFrom" value="${esc(m?.from || '')}" placeholder="Owner/Repo[/folder]">
+        <button type="button" class="ghost" data-pick="mfFrom">pick…</button></span></label>
+      <label>to repository
+        <span class="picker"><input id="mfTo" value="${esc(m?.to || '')}" placeholder="Owner/Repo[/folder]">
+        <button type="button" class="ghost" data-pick="mfTo">pick…</button></span></label>
+      <details class="adv" ${m && (m.merge !== 'text' || m.conflict !== 'swap' || !m.bi_directional || m.from_branch !== 'main' || m.to_branch !== 'main') ? 'open' : ''}>
+        <summary>advanced</summary>
+        <div class="grid">
+          <label>merge <select id="mfMerge">
+            <option value="text">text (3-way)</option><option value="union">union (keep both)</option></select></label>
+          <label>conflict <select id="mfConflict">
+            <option value="swap">swap (freeze + review PRs)</option>
+            <option value="to-wins">to-wins</option><option value="freeze">freeze (no PRs)</option></select></label>
+          <label>from branch <input id="mfFromBranch" value="${esc(m?.from_branch || 'main')}"></label>
+          <label>to branch <input id="mfToBranch" value="${esc(m?.to_branch || 'main')}"></label>
+          <label class="check"><input type="checkbox" id="mfBi" ${m ? (m.bi_directional ? 'checked' : '') : 'checked'}> bidirectional</label>
+        </div></details>
+      <div style="display:flex;gap:8px">
+        <button class="primary" type="submit">${m ? 'Stage edit' : 'Stage map'}</button>
+        <button class="ghost" type="button" id="mfCancel">Cancel</button>
+        <span class="hint" style="margin:auto 0 0">Staged changes are committed with the Commit button below.</span>
+      </div>
+    </form>`;
+  $('mapForm').hidden = false;
+  $('mfMerge').value = m?.merge || 'text';
+  $('mfConflict').value = m?.conflict || 'swap';
+  $('mf').onsubmit = (ev) => {
+    ev.preventDefault();
+    const name = $('mfName').value.trim();
+    const entry = {name, from: $('mfFrom').value.trim(), to: $('mfTo').value.trim()};
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) { toast('Map name: letters, digits, _ or - only.', true); return; }
+    if (!entry.from || !entry.to) { toast('Both repositories are required.', true); return; }
+    if ($('mfMerge').value !== 'text') entry.merge = $('mfMerge').value;
+    if ($('mfConflict').value !== 'swap') entry.conflict = $('mfConflict').value;
+    if (!$('mfBi').checked) entry.bi_directional = false;
+    if ($('mfFromBranch').value.trim() !== 'main') entry.from_branch = $('mfFromBranch').value.trim();
+    if ($('mfToBranch').value.trim() !== 'main') entry.to_branch = $('mfToBranch').value.trim();
+    addOp({op: 'map_upsert', entry});
+    closeMapForm();
+  };
+  $('mfCancel').onclick = closeMapForm;
+  $('mapForm').querySelectorAll('[data-pick]').forEach((b) =>
+    b.onclick = () => openPicker(b.dataset.pick));
+}
+
+async function ensureRepos() {
+  if (S.repos) return S.repos;
+  const d = await api('/api/repos?q=');
+  S.repos = d.repos || [];
+  return S.repos;
+}
+function openPicker(inputId) {
+  closePicker();
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.innerHTML = `<input placeholder="filter repositories"><ul><li><span class="hint">loading…</span></li></ul>`;
+  const input = $(inputId);
+  input.parentElement.appendChild(pop);
+  const search = pop.querySelector('input');
+  search.oninput = () => fill(search.value.toLowerCase());
+  pop.addEventListener('click', (ev) => ev.stopPropagation());
+  document.addEventListener('click', closePicker, {once: true});
+  async function fill(q) {
+    let repos = [];
+    try { repos = await ensureRepos(); }
+    catch (e) { pop.querySelector('ul').innerHTML = '<li><span class="hint">gh unavailable — type the repository instead</span></li>'; return; }
+    const list = repos.filter((r) => r.nameWithOwner.toLowerCase().includes(q)).slice(0, 200);
+    pop.querySelector('ul').innerHTML = list.length ? list.map((r) =>
+      `<li data-repo="${esc(r.nameWithOwner)}">${esc(r.nameWithOwner)}
+       <small>${esc(r.visibility)}${r.isFork ? ' · fork' : ''}</small></li>`).join('')
+      : '<li><span class="hint">no matches — type the repository instead</span></li>';
+    pop.querySelectorAll('[data-repo]').forEach((li) => li.onclick = () => {
+      const parts = input.value.split('/');
+      let suffix = parts.length > 2 ? '/' + parts.slice(2).join('/') : '';
+      input.value = li.dataset.repo + suffix;
+      closePicker();
+    });
+  }
+  fill('');
+  search.focus();
+}
+function closePicker() {
+  document.querySelectorAll('.picker .pop').forEach((p) => p.remove());
+}
+
+function renderPermOptions() {
+  const repos = new Set();
+  for (const m of S.model.maps) { repos.add(repoOf(m.from)); repos.add(repoOf(m.to)); }
+  for (const p of S.model.permissions) if (p.repo) repos.add(repoOf(p.repo));
+  const cur = S.tree.repo;
+  $('treeRepo').innerHTML = [...repos].filter(Boolean).map((r) =>
+    `<option value="${esc(r)}" ${r === cur ? 'selected' : ''}>${esc(r)}</option>`).join('')
+    || '<option value="">(define a map first)</option>';
+}
+async function loadTree() {
+  const repo = $('treeRepo').value;
+  if (!repo) return;
+  S.tree.repo = repo;
+  S.tree.loading = true;
+  renderTree();
+  try { await fetchTree(); }
+  catch (e) { fail(e); S.tree.files = null; renderTree(); }
+}
+let treeTimer = null;
+function scheduleTree() { clearTimeout(treeTimer); treeTimer = setTimeout(fetchTree, 250); }
+async function fetchTree() {
+  const repo = S.tree.repo;
+  if (!repo) return;
+  try {
+    const d = await api('/api/active', {repo, ops: S.pending});
+    if (S.tree.repo !== repo) return;
+    S.tree.files = d.files;
+    S.tree.maps = d.maps;
+    S.tree.truncated = d.truncated;
+    S.tree.loading = false;
+    renderTree(); renderDetail();
+  } catch (e) {
+    S.tree.loading = false;
+    fail(e);
+    renderTree();
+  }
+}
+function buildTree() {
+  const root = {name: '', path: '', folders: new Map(), files: [], all: []};
+  for (const f of S.tree.files || []) {
+    const parts = f.path.split('/');
+    let node = root;
+    node.all.push(f);
+    for (let i = 0; i < parts.length - 1; i++) {
+      const path = (node.path ? node.path + '/' : '') + parts[i];
+      if (!node.folders.has(parts[i])) node.folders.set(parts[i],
+        {name: parts[i], path, folders: new Map(), files: [], all: []});
+      node = node.folders.get(parts[i]);
+      node.all.push(f);
+    }
+    node.files.push(f);
+  }
+  return root;
+}
+function folderStats(node) {
+  const stats = new Map();
+  for (const f of node.all) {
+    for (const m of S.tree.maps) {
+      const has = Object.prototype.hasOwnProperty.call(f.maps, m);
+      if (!stats.has(m)) stats.set(m, {covered: 0, total: 0, uniform: true});
+      const st = stats.get(m);
+      st.total++;
+      if (has) { st.covered++; if (f.maps[m] !== node.path + '/**') st.uniform = false; }
+      else st.uniform = false;
+    }
+  }
+  return stats;
+}
+function renderTree() {
+  const box = $('tree');
+  if (S.tree.loading) { box.innerHTML = '<span class="hint"><span class="spin"></span>loading tree via gh…</span>'; return; }
+  if (!S.tree.files) { box.innerHTML = '<span class="hint">no tree loaded</span>'; return; }
+  const root = buildTree();
+  $('treeHint').textContent = `${S.tree.files.length} file(s) on ${S.tree.repo}` +
+    (S.tree.truncated ? ' (truncated)' : '');
+  const html = (node, depth) => {
+    let out = '';
+    for (const folder of [...node.folders.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      const open = S.tree.expanded.has(folder.path);
+      const stats = folderStats(folder);
+      let chips = '';
+      for (const [m, st] of stats) {
+        if (!st.covered) continue;
+        chips += chip(m, st.covered === st.total ? '' : 'part');
+      }
+      out += `<div class="trow ${S.tree.selected === folder.path ? 'sel' : ''}" data-path="${esc(folder.path)}" data-type="folder" style="padding-left:${4 + depth * 14}px">
+        <span class="caret">${open ? '▾' : '▸'}</span><span class="nm">${esc(folder.name)}</span>
+        <span class="dots"></span>${chips}</div>`;
+      if (open) out += html(folder, depth + 1);
+    }
+    for (const f of node.files.sort((a, b) => a.path.localeCompare(b.path))) {
+      let chips = '';
+      for (const m of Object.keys(f.maps)) chips += chip(m);
+      out += `<div class="trow file ${S.tree.selected === f.path ? 'sel' : ''}" data-path="${esc(f.path)}" data-type="file" style="padding-left:${18 + depth * 14}px">
+        <span class="nm">${esc(f.path.split('/').pop())}</span><span class="dots"></span>${chips}</div>`;
+    }
+    return out;
+  };
+  box.innerHTML = html(root, 0) || '<span class="hint">empty repository</span>';
+  box.querySelectorAll('.trow').forEach((row) => {
+    row.onclick = (ev) => {
+      const path = row.dataset.path, type = row.dataset.type;
+      if (type === 'folder' && (ev.target.classList.contains('caret') || S.tree.selected === path)) {
+        S.tree.expanded.has(path) ? S.tree.expanded.delete(path) : S.tree.expanded.add(path);
+      }
+      S.tree.selected = path;
+      renderTree(); renderDetail();
+    };
+  });
+}
+function mapsForRepo(repo) {
+  return S.model.maps.filter((m) => repoOf(m.from) === repo || repoOf(m.to) === repo);
+}
+function renderDetail() {
+  const box = $('detail');
+  const sel = S.tree.selected;
+  if (!sel || !S.tree.files) { box.hidden = true; return; }
+  const isFolder = !S.tree.files.some((f) => f.path === sel);
+  const grantPath = isFolder ? sel + '/**' : sel;
+  const repo = S.tree.repo;
+  const maps = mapsForRepo(repo).filter((m) => S.tree.maps.includes(m.name));
+  const covByPath = {};
+  for (const f of S.tree.files) covByPath[f.path] = f.maps;
+  const rows = maps.map((m) => {
+    let covered = false, via = null, partial = false;
+    if (isFolder) {
+      const stats = folderStats({path: sel, all: (S.tree.files || []).filter((f) => f.path === sel + '/' || f.path.startsWith(sel + '/'))});
+      const st = stats.get(m.name) || {covered: 0, total: 0, uniform: false};
+      covered = st.total > 0 && st.covered === st.total;
+      partial = st.covered > 0 && st.covered < st.total;
+      via = covered && st.uniform ? grantPath : null;
+    } else {
+      via = (covByPath[sel] || {})[m.name] ?? null;
+      covered = via !== null;
+    }
+    let check, note;
+    if (covered && via === grantPath) { check = 'checked'; note = via === '**' ? 'granted by **' : 'granted by this path'; }
+    else if (covered) { check = 'checked disabled'; note = `granted by pattern ${via} — edit the entries below`; }
+    else { check = partial ? 'disabled' : ''; note = partial ? 'partial coverage — expand and pick files' : 'not shared'; }
+    return `<div class="mrow"><input type="checkbox" ${check} data-map="${esc(m.name)}">
+      ${chip(m.name)}<span class="st">${esc(note)}</span></div>`;
+  }).join('');
+  box.hidden = false;
+  box.innerHTML = `
+    <h4>${esc(sel)}${isFolder ? '/' : ''}</h4>
+    <p class="hint">${isFolder
+      ? 'Toggling a map grants <code>' + esc(grantPath) + '</code>: every current and future file in this folder syncs through that map.'
+      : 'Toggling a map shares this exact file through it.'}
+    ${rows.length ? '' : 'No maps pair this repository.'}</p>
+    ${rows}`;
+  box.querySelectorAll('input[data-map]').forEach((cb) => {
+    cb.onchange = () => {
+      const map = cb.dataset.map;
+      addOp(cb.checked
+        ? {op: 'perm_grant', repo, path: grantPath, maps: [map]}
+        : {op: 'perm_revoke', repo, path: grantPath, maps: [map]});
+    };
+  });
+}
+
+function renderPermList() {
+  const list = S.model.permissions;
+  $('permList').innerHTML = list.length ? list.map((p) => `
+    <div class="entry">
+      <div class="meta"><span class="badge">${esc(p.repo || 'absolute paths')}</span>
+        ${p.maps.map((m) => chip(m, 'flat')).join('')}
+        <span class="ops"><button class="linkish" data-e="${p.index}">edit</button>
+        <button class="linkish danger" data-x="${p.index}">delete</button></span></div>
+      <div class="paths">${p.paths.map((x) => esc(x)).join('<br>')}</div>
+      ${p.comment ? `<div class="hint">${esc(p.comment)}</div>` : ''}
+    </div>`).join('')
+    : '<p class="hint">No permission entries yet.</p>';
+  $('permList').querySelectorAll('[data-e]').forEach((b) =>
+    b.onclick = () => permForm(Number(b.dataset.e)));
+  $('permList').querySelectorAll('[data-x]').forEach((b) =>
+    b.onclick = () => {
+      if (!confirm('Remove this permission entry?\nThe granted files disappear from the other side on the next sync.')) return;
+      addOp({op: 'perm_remove', index: Number(b.dataset.x)});
+      closePermForm();
+    });
+}
+function closePermForm() { $('permForm').hidden = true; S.editing.perm = null; }
+function permForm(index) {
+  const p = index != null ? S.model.permissions[index] : null;
+  S.editing.perm = index;
+  $('permForm').innerHTML = `
+    <h3>${p ? 'Edit pattern entry' : 'Add pattern entry'}</h3>
+    <form class="stack" id="pf">
+      <label>repo context (optional — allows relative paths)
+        <span class="picker"><input id="pfRepo" value="${esc(p?.repo || '')}" placeholder="Owner/Repo[/folder]">
+        <button type="button" class="ghost" data-pick="pfRepo">pick…</button></span></label>
+      <label>paths (one per line; globs: * one segment, ** any depth, {a,b} alternatives)
+        <textarea id="pfPaths">${esc((p?.paths || []).join('\n'))}</textarea></label>
+      <label>maps
+        <span style="display:flex;gap:12px;flex-wrap:wrap">${S.model.maps.map((m) =>
+          `<span class="check" style="display:flex;gap:4px;align-items:center;color:var(--ink)">
+           <input type="checkbox" data-map="${esc(m.name)}" ${p?.maps.includes(m.name) ? 'checked' : ''}>${esc(m.name)}</span>`).join('')}</span></label>
+      <div style="display:flex;gap:8px">
+        <button class="primary" type="submit">Stage entry</button>
+        <button class="ghost" type="button" id="pfCancel">Cancel</button></div>
+    </form>`;
+  $('permForm').hidden = false;
+  $('permForm').querySelectorAll('[data-pick]').forEach((b) =>
+    b.onclick = () => openPicker(b.dataset.pick));
+  $('pfCancel').onclick = closePermForm;
+  $('pf').onsubmit = (ev) => {
+    ev.preventDefault();
+    const paths = $('pfPaths').value.split('\n').map((s) => s.trim()).filter(Boolean);
+    const maps = [...$('pf').querySelectorAll('input[data-map]:checked')].map((c) => c.dataset.map);
+    if (!paths.length || !maps.length) { toast('Paths and maps are required.', true); return; }
+    const entry = {paths, maps};
+    const repo = $('pfRepo').value.trim();
+    if (repo) entry.repo = repo;
+    addOp({op: 'perm_upsert', index: p ? index : null, entry});
+    closePermForm();
+  };
+}
+
+async function loadStatus() {
+  $('statusBody').innerHTML = '<span class="hint">loading…</span>';
+  let d;
+  try { d = await api('/api/status'); }
+  catch (e) { fail(e); $('statusBody').innerHTML = '<span class="hint">status unavailable</span>'; return; }
+  if (!d.ok) { $('statusBody').innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+  const cards = (d.maps || []).map((m) => `
+    <div class="card"><h3>${esc(m.name)} <small class="hint">${esc(m.bi_directional ? 'two-way' : 'one-way')} · merge ${esc(m.merge)} · conflict ${esc(m.conflict)}</small></h3>
+      <div><code>${esc(m.from.repo)}${m.from.prefix ? '/' + esc(m.from.prefix) : ''}</code>
+      <span class="hint">${esc(m.from.branch)} ${m.from.tip ? '@ ' + esc(m.from.tip) : '— unreachable'}</span></div>
+      <div>↕ ${m.patterns} granted pattern(s)</div>
+      <div><code>${esc(m.to.repo)}${m.to.prefix ? '/' + esc(m.to.prefix) : ''}</code>
+      <span class="hint">${esc(m.to.branch)} ${m.to.tip ? '@ ' + esc(m.to.tip) : '— unreachable'}</span></div>
+      <div class="hint">baseline sync-state/${esc(m.name)}: ${m.baseline ? '@ ' + esc(m.baseline) : 'MISSING — new pair? sync --initialize'}</div>
+      ${Object.entries(m.review_prs || {}).map(([r, ns]) => `<div class="hint">${esc(r)}: review PR ${ns.map((n) => '#' + n).join(', ')}</div>`).join('')}
+    </div>`).join('');
+  const prs = Object.entries(d.prs || {}).filter(([, list]) => list.length).map(([repo, list]) =>
+    `<div class="card"><h3>Open PRs — ${esc(repo)}</h3>${list.map((pr) =>
+      `<div><a href="${esc(pr.url)}" target="_blank">#${pr.number}</a> ${esc(pr.title)}</div>`).join('')}</div>`).join('');
+  const lr = d.last_run;
+  $('statusBody').innerHTML = `
+    ${(d.errors || []).length ? `<div class="err">${esc(d.errors.join(' · '))}</div>` : ''}
+    <div class="statusgrid">${cards}</div>
+    ${prs || '<p class="hint">No open PRs in mapped repositories.</p>'}
+    <p class="hint">lock: ${esc(d.lock)} · last run: ${lr ? esc((lr.time || '').replace('T', ' ')) + ' UTC — ' + (lr.ok ? 'ok' : 'FAILED') + ', ' + (lr.conflicts ?? 0) + ' conflict(s)' : 'never on this host'}
+    ${d.prs_error ? '<br>' + esc(d.prs_error) : ''}</p>`;
+}
+
+async function syncNow() {
+  if (S.pending.length && !confirm('There are uncommitted edits. Sync uses the file on disk.\nContinue anyway?')) return;
+  try {
+    await api('/api/sync', {});
+    $('syncDrawer').hidden = false;
+    pollSync();
+  } catch (e) { fail(e); }
+}
+async function pollSync() {
+  let d;
+  try { d = await api('/api/sync'); } catch (e) { return; }
+  $('syncLog').textContent = d.log || '(no output yet)';
+  $('syncLog').scrollTop = $('syncLog').scrollHeight;
+  $('syncSpin').style.display = d.running ? 'inline-block' : 'none';
+  $('syncState').textContent = d.running ? 'syncing…' :
+    (d.returncode === 0 ? 'sync finished — ok' : 'sync finished — exit ' + d.returncode);
+  $('syncBtn').disabled = d.running;
+  if (d.running) $('syncDrawer').hidden = false;
+  clearTimeout(S.syncTimer);
+  if (d.running) S.syncTimer = setTimeout(pollSync, 2000);
+}
+
+document.querySelectorAll('nav button').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+$('addMapBtn').onclick = () => mapForm(null);
+$('addPermBtn').onclick = () => permForm(null);
+$('treeRepo').onchange = () => { S.tree.selected = null; loadTree(); };
+$('treeReload').onclick = loadTree;
+$('statusRefresh').onclick = loadStatus;
+$('previewBtn').onclick = async () => {
+  try {
+    const d = await api('/api/preview', {ops: S.pending});
+    $('diffPre').textContent = d.diff || 'no textual changes (maybe effective defaults only)';
+    $('diffDialog').showModal();
+  } catch (e) { fail(e); }
+};
+$('commitBtn').onclick = commit;
+$('discardBtn').onclick = discard;
+$('syncBtn').onclick = syncNow;
+$('syncClose').onclick = () => { $('syncDrawer').hidden = true; };
+window.addEventListener('beforeunload', (e) => {
+  if (S.pending.length) { e.preventDefault(); e.returnValue = ''; }
+});
+bootstrap();
+pollSync();
+</script>
+</body>
+</html>

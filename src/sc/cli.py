@@ -331,8 +331,17 @@ def cmd_init(args):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(template)
     print(f'Wrote {target}.')
-    print('Next: edit it, check `sc doctor`, then run `sc sync --initialize` once for new pairs.')
+    print('Next: edit it (or run `sc ui` for the web editor), check `sc doctor`,')
+    print('then run `sc sync --initialize` once for new pairs.')
     return 0
+
+
+def cmd_ui(args):
+    path = resolve_config(args.config)
+    if path is None:
+        return 2
+    from sc import ui
+    return ui.serve(path, args.port, args.host)
 
 
 def cmd_runner(args):
@@ -396,6 +405,14 @@ def build_parser():
     init.add_argument('path', nargs='?', type=Path, default=Path('sc.toml'))
     init.add_argument('--force', action='store_true')
     init.set_defaults(func=cmd_init)
+
+    ui = sub.add_parser('ui', help='edit maps and permissions in a local web UI')
+    ui.add_argument('-c', '--config', type=Path, default=None)
+    ui.add_argument('-p', '--port', type=int, default=8080,
+                    help='port to serve on (default 8080)')
+    ui.add_argument('--host', default='127.0.0.1',
+                    help='address to bind (default 127.0.0.1)')
+    ui.set_defaults(func=cmd_ui)
 
     runner = sub.add_parser('runner', help='manage the self-hosted Actions runner')
     runner_sub = runner.add_subparsers(dest='action', required=True)

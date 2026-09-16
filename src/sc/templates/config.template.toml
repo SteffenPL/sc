@@ -3,6 +3,8 @@
 # Nothing is shared unless a permission grants it through a map.
 # Check with `sc doctor`; apply with `sc sync` (add --initialize once for
 # new pairs, or --dry-run to preview without pushing).
+# `sc ui` edits this file in the browser: gh repo picker, live vault tree
+# with active maps per folder, surgical edits committed to git on demand.
 
 # A map pairs exactly two repositories. Endpoints are 'Owner/Repo[/folder]';
 # the optional folder is a prefix: stripped from that side's paths and added

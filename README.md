@@ -8,6 +8,8 @@ sync both ways on `main`.
 - private by default — only granted paths sync; whole files, never history
 - concurrent edits auto-merge; conflicts freeze with review PRs on both sides
 - plain TOML config; stdlib-only Python 3.11+; needs git + gh
+- `sc ui`: local web editor for maps and permissions, with a live vault
+  tree, gh repo picker and one-click git commits of the config
 - replaces [Copybara](https://github.com/google/copybara) for this use case:
   no Java/Bazel, no generated Starlark
 - one sync host — don't run two parallel sync services
@@ -15,9 +17,9 @@ sync both ways on `main`.
 ## Quick start
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.3.0
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.0
 sc init                       # writes an annotated sc.toml
-$EDITOR sc.toml               # define maps + permissions
+sc ui                         # edit maps + permissions in the browser
 sc doctor                     # verify prerequisites and config
 sc sync --initialize          # once per new pair
 sc status                     # read-only report
@@ -51,7 +53,7 @@ interval = 300                    # sc watch poll, seconds (>= 60)
 ```
 
 - `[[maps]]` pairs two repos. A path suffix is a folder prefix:
-  stripped on one side, added on the other.
+  stripped on one side, added to the other.
 - `[[permissions]]` define what syncs — nothing else moves. Globs grant
   whole folders: new files from either side sync automatically. Check with
   `sc sync --dry-run`.
@@ -59,6 +61,11 @@ interval = 300                    # sc watch poll, seconds (>= 60)
   `bi_directional = false` = one-way mirror (source overwrites target).
 - revoking a path removes it from the other side; your side keeps it. Old
   copies can never be taken back.
+- `sc ui [-c F] [-p PORT]` edits this file without a text editor: edits are
+  buffered in the browser, applied surgically (comments and formatting are
+  preserved), validated, and committed to the config's git repository on
+  demand — never pushed. The permissions tab shows the live file tree of a
+  mapped repo with the active maps per folder.
 
 ## Sync behavior
 
@@ -78,6 +85,7 @@ interval = 300                    # sc watch poll, seconds (>= 60)
 | Command | Purpose |
 | --- | --- |
 | `sc init [PATH]` | write config template |
+| `sc ui [-c F] [-p PORT]` | local web editor for maps + permissions |
 | `sc doctor [-c F]` | preflight: python/git/gh, auth, config |
 | `sc status [-c F]` | read-only report: tips, baselines, PRs, last run |
 | `sc sync [-c F] [--initialize] [--dry-run]` | sync all maps once |
