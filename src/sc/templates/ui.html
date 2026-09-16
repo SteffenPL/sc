@@ -116,12 +116,16 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break
 #tray{position:fixed;bottom:0;left:0;right:0;background:var(--card);
   border-top:1px solid var(--accent);padding:10px 16px;z-index:30;
   display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 -6px 18px #0001}
+#tray.applied{border-top-color:var(--ok)}
 #tray .count{font-weight:700;color:var(--accent)}
 #tray ul{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:0;padding:0;
   color:var(--dim);font-size:12px}
 #tray li{background:var(--chipbg);border-radius:6px;padding:2px 8px}
+#tray li.ok{background:#e6f4ea;color:var(--ok)}
 #tray button{margin-left:auto}
 #tray button+button{margin-left:0}
+tr.staged td, .entry.staged{background:#fffaf0;box-shadow:inset 3px 0 0 #d9a03f}
+.badge.stagedmark{background:#fdeeca;color:#91600b;margin-left:6px}
 #syncDrawer{position:fixed;bottom:0;left:0;right:0;background:#111722;color:#dce3f0;
   z-index:25;padding:10px 16px;max-height:45vh;display:flex;flex-direction:column}
 #syncDrawer[hidden]{display:none}
@@ -233,7 +237,7 @@ const S = {
   tree: {repo: null, files: null, cov: null, maps: [], truncated: false,
          expanded: new Set(), selected: null, loading: false, loadStarted: 0},
   editing: {map: null, perm: null},
-  syncTimer: null, statusBusy: false, commitBusy: false,
+  syncTimer: null, statusBusy: false, commitBusy: false, trayFlash: false,
 };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
@@ -322,6 +326,7 @@ function renderHeader() {
 
 let previewTimer = null;
 function addOp(op) {
+  if (S.commitBusy) { toast('A commit is in progress — try again in a moment.', true); return; }
   let key = null;
   if (op.op === 'map_upsert' || op.op === 'map_remove') key = op.op + '|' + (op.entry?.name ?? op.name);
   if (op.op === 'perm_grant' || op.op === 'perm_revoke')
@@ -339,6 +344,28 @@ function opKeyOf(op) {
     return 'permpath|' + op.repo + '|' + op.path + '|' + [...op.maps].sort().join(',');
   return null;
 }
+function pendingMapNames() {
+  const names = new Set();
+  for (const op of S.pending) {
+    if (op.op === 'map_upsert' || op.op === 'map_remove')
+      names.add(op.entry ? op.entry.name : op.name);
+  }
+  return names;
+}
+function pendingEntryStaged(p) {
+  for (const op of S.pending) {
+    if ((op.op === 'perm_upsert' || op.op === 'perm_remove') && op.index === p.index) return true;
+    if (op.op === 'perm_grant' || op.op === 'perm_revoke') {
+      if (p.maps.some((m) => op.maps.includes(m)) &&
+          repoOf(p.repo || '') === repoOf(op.repo)) return true;
+      if (!p.repo && p.paths.some((path) => path === op.repo + '/' + op.path)) return true;
+    }
+  }
+  return false;
+}
+function stagedMark() {
+  return ' <span class="badge stagedmark">staged</span>';
+}
 function schedulePreview() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(refreshPreview, 200);
@@ -354,10 +381,24 @@ async function refreshPreview() {
   } catch (e) { fail(e); }
 }
 function renderTray() {
-  $('tray').hidden = !S.pending.length;
-  if (!S.pending.length) return;
-  $('trayCount').textContent = S.pending.length + ' pending change' + (S.pending.length > 1 ? 's' : '');
-  $('trayOps').innerHTML = S.pending.map(opSummary).map((s) => `<li>${esc(s)}</li>`).join('');
+  const pending = S.pending.length;
+  $('tray').hidden = !pending && !S.trayFlash;
+  $('trayCount').textContent = pending ? pending + ' staged change' + (pending > 1 ? 's' : '') + ' — not yet in the file' : '';
+  $('trayOps').innerHTML = pending ? S.pending.map(opSummary).map((s) => `<li>${esc(s)}</li>`).join('') : '';
+  $('commitBtn').textContent = (S.git && S.git.repo ? 'Commit' : 'Save') +
+    (pending ? ` · ${pending}` : '');
+}
+function flashApplied(text) {
+  S.trayFlash = true;
+  $('tray').hidden = false;
+  $('tray').classList.add('applied');
+  $('trayCount').textContent = '';
+  $('trayOps').innerHTML = `<li class="ok">${esc(text)}</li>`;
+  setTimeout(() => {
+    S.trayFlash = false;
+    $('tray').classList.remove('applied');
+    if (!S.pending.length) renderTray();
+  }, 6000);
 }
 function opSummary(op) {
   if (op.op === 'map_upsert') return 'map ' + op.entry.name;
@@ -389,10 +430,16 @@ async function commit() {
     renderTray();
     renderTab();
     if (S.tab === 'permissions' && S.tree.repo) scheduleTree();
-    if (d.commit && d.commit.error) toast('File written, but commit failed: ' + d.commit.error, true);
-    else if (d.commit && d.commit.sha) toast('Committed ' + d.commit.sha + ': ' + d.commit.message);
-    else if (d.changed) toast('Saved (not in a git repository).');
-    else toast('Nothing changed.');
+    if (d.commit && d.commit.error) {
+      toast('File written, but commit failed: ' + d.commit.error, true);
+      flashApplied('File updated — commit failed, commit manually');
+    } else if (d.commit && d.commit.sha) {
+      flashApplied(`Committed ${d.commit.sha} — ${d.commit.message}`);
+    } else if (d.changed) {
+      flashApplied('Saved — the config file was updated');
+    } else {
+      toast('Nothing changed.');
+    }
   } catch (e) { fail(e); }
   finally {
     S.commitBusy = false;
@@ -427,8 +474,9 @@ function modeText(m) {
   return (m.bi_directional ? 'two-way' : 'one-way') + ' · merge ' + m.merge + ' · conflict ' + m.conflict;
 }
 function renderMaps() {
+  const staged = pendingMapNames();
   const rows = S.model.maps.map((m) => `
-    <tr><td><b>${esc(m.name)}</b></td>
+    <tr class="${staged.has(m.name) ? 'staged' : ''}"><td><b>${esc(m.name)}</b>${staged.has(m.name) ? stagedMark() : ''}</td>
     <td><code>${esc(m.from)}</code><br>↕<br><code>${esc(m.to)}</code></td>
     <td>${esc(modeText(m))}${m.from_branch !== 'main' || m.to_branch !== 'main' ? '<br><small>' + esc(m.from_branch) + ' ↔ ' + esc(m.to_branch) + '</small>' : ''}</td>
     <td style="text-align:right"><button class="ghost" data-edit="${esc(m.name)}">Edit</button>
@@ -689,10 +737,14 @@ function renderDetail() {
       via = (covByPath[sel] || {})[m.name] ?? null;
       covered = via !== null;
     }
+    const stagedNow = S.pending.some((op) =>
+      (op.op === 'perm_grant' || op.op === 'perm_revoke') &&
+      op.repo === repo && op.path === grantPath && op.maps.includes(m.name));
     let check, note;
     if (covered && via === grantPath) { check = 'checked'; note = via === '**' ? 'granted by **' : 'granted by this path'; }
     else if (covered) { check = 'checked disabled'; note = `granted by pattern ${via} — edit the entries below`; }
     else { check = partial ? 'disabled' : ''; note = partial ? 'partial coverage — expand and pick files' : 'not shared'; }
+    if (stagedNow) note += ' · staged';
     return `<div class="mrow"><input type="checkbox" ${check} data-map="${esc(m.name)}">
       ${chip(m.name)}<span class="st">${esc(note)}</span></div>`;
   }).join('');
@@ -717,9 +769,10 @@ function renderDetail() {
 function renderPermList() {
   const list = S.model.permissions;
   $('permList').innerHTML = list.length ? list.map((p) => `
-    <div class="entry">
+    <div class="entry ${pendingEntryStaged(p) ? 'staged' : ''}">
       <div class="meta"><span class="badge">${esc(p.repo || 'absolute paths')}</span>
         ${p.maps.map((m) => chip(m, 'flat')).join('')}
+        ${pendingEntryStaged(p) ? stagedMark() : ''}
         <span class="ops"><button class="linkish" data-e="${p.index}">edit</button>
         <button class="linkish danger" data-x="${p.index}">delete</button></span></div>
       <div class="paths">${p.paths.map((x) => esc(x)).join('<br>')}</div>
