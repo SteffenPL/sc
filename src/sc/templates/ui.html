@@ -231,13 +231,24 @@ const S = {
   model: {maps: [], permissions: [], errors: []},
   pending: [], tab: 'maps', repos: null,
   tree: {repo: null, files: null, cov: null, maps: [], truncated: false,
-         expanded: new Set(), selected: null, loading: false},
+         expanded: new Set(), selected: null, loading: false, loadStarted: 0},
   editing: {map: null, perm: null},
-  syncTimer: null,
+  syncTimer: null, statusBusy: false, commitBusy: false,
 };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function loading(el, label) {
+  const started = Date.now();
+  const paint = () => {
+    const seconds = Math.round((Date.now() - started) / 1000);
+    el.innerHTML = `<span class="hint"><span class="spin"></span>${esc(label)} · ${seconds}s</span>`;
+  };
+  paint();
+  const timer = setInterval(paint, 1000);
+  return () => clearInterval(timer);
+}
 
 function toast(msg, err) {
   const t = document.createElement('div');
@@ -247,11 +258,12 @@ function toast(msg, err) {
   setTimeout(() => t.remove(), err ? 10000 : 6000);
 }
 async function api(path, body) {
-  const opts = body === undefined ? {} : {
+  const opts = {signal: AbortSignal.timeout(120000)};
+  if (body !== undefined) Object.assign(opts, {
     method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-SC-Token': S.token},
     body: JSON.stringify(body),
-  };
+  });
   const res = await fetch(path, opts);
   let data = null;
   try { data = await res.json(); } catch (e) { data = {ok: false, error: 'bad response'}; }
@@ -357,10 +369,15 @@ function opSummary(op) {
   return op.op;
 }
 async function commit() {
-  if (!S.pending.length) return;
+  if (!S.pending.length || S.commitBusy) return;
   if (S.model.errors && S.model.errors.length) { toast('Fix the configuration errors first.', true); return; }
   if (S.git && S.git.repo && S.git.other_dirty)
     if (!confirm('The config repository has other uncommitted changes.\nOnly the config file will be committed. Continue?')) return;
+  const button = $('commitBtn');
+  S.commitBusy = true;
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = 'Committing…';
   try {
     const d = await api('/api/save',
       {base_version: S.fileVersion, ops: S.pending, commit: true});
@@ -377,6 +394,11 @@ async function commit() {
     else if (d.changed) toast('Saved (not in a git repository).');
     else toast('Nothing changed.');
   } catch (e) { fail(e); }
+  finally {
+    S.commitBusy = false;
+    button.disabled = false;
+    button.textContent = label;
+  }
 }
 async function discard() {
   if (!S.pending.length) return;
@@ -528,14 +550,23 @@ function renderPermOptions() {
     `<option value="${esc(r)}" ${r === cur ? 'selected' : ''}>${esc(r)}</option>`).join('')
     || '<option value="">(define a map first)</option>';
 }
+let treeTicker = null;
+function tickTreeLoading() {
+  clearInterval(treeTicker);
+  treeTicker = setInterval(() => {
+    if (S.tree.loading) renderTree();
+    else clearInterval(treeTicker);
+  }, 1000);
+}
 async function loadTree() {
   const repo = $('treeRepo').value;
-  if (!repo) return;
+  if (!repo || S.tree.loading) return;
   S.tree.repo = repo;
   S.tree.loading = true;
+  S.tree.loadStarted = Date.now();
   renderTree();
-  try { await fetchTree(); }
-  catch (e) { fail(e); S.tree.files = null; renderTree(); }
+  tickTreeLoading();
+  await fetchTree();
 }
 let treeTimer = null;
 function scheduleTree() { clearTimeout(treeTimer); treeTimer = setTimeout(fetchTree, 250); }
@@ -589,7 +620,11 @@ function folderStats(node) {
 }
 function renderTree() {
   const box = $('tree');
-  if (S.tree.loading) { box.innerHTML = '<span class="hint"><span class="spin"></span>loading tree via gh…</span>'; return; }
+  if (S.tree.loading) {
+    const seconds = Math.round((Date.now() - S.tree.loadStarted) / 1000);
+    box.innerHTML = `<span class="hint"><span class="spin"></span>loading vault tree via gh · ${seconds}s</span>`;
+    return;
+  }
   if (!S.tree.files) { box.innerHTML = '<span class="hint">no tree loaded</span>'; return; }
   const root = buildTree();
   $('treeHint').textContent = `${S.tree.files.length} file(s) on ${S.tree.repo}` +
@@ -738,10 +773,24 @@ function permForm(index) {
 }
 
 async function loadStatus() {
-  $('statusBody').innerHTML = '<span class="hint">loading…</span>';
+  if (S.statusBusy) return;
+  S.statusBusy = true;
+  $('statusRefresh').disabled = true;
+  const stop = loading($('statusBody'),
+    'contacting GitHub: branch tips, baselines and open PRs');
   let d;
   try { d = await api('/api/status'); }
-  catch (e) { fail(e); $('statusBody').innerHTML = '<span class="hint">status unavailable</span>'; return; }
+  catch (e) {
+    stop();
+    fail(e);
+    $('statusBody').innerHTML = '<span class="hint">status unavailable — gh or network failed; try Refresh</span>';
+    $('statusRefresh').disabled = false;
+    S.statusBusy = false;
+    return;
+  }
+  stop();
+  $('statusRefresh').disabled = false;
+  S.statusBusy = false;
   if (!d.ok) { $('statusBody').innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
   const cards = (d.maps || []).map((m) => `
     <div class="card"><h3>${esc(m.name)} <small class="hint">${esc(m.bi_directional ? 'two-way' : 'one-way')} · merge ${esc(m.merge)} · conflict ${esc(m.conflict)}</small></h3>
@@ -778,8 +827,9 @@ async function pollSync() {
   try { d = await api('/api/sync'); } catch (e) { return; }
   $('syncLog').textContent = d.log || '(no output yet)';
   $('syncLog').scrollTop = $('syncLog').scrollHeight;
+  const elapsed = d.started ? Math.max(0, Math.round((Date.now() - Date.parse(d.started)) / 1000)) : 0;
   $('syncSpin').style.display = d.running ? 'inline-block' : 'none';
-  $('syncState').textContent = d.running ? 'syncing…' :
+  $('syncState').textContent = d.running ? `syncing… · ${elapsed}s` :
     (d.returncode === 0 ? 'sync finished — ok' : 'sync finished — exit ' + d.returncode);
   $('syncBtn').disabled = d.running;
   if (d.running) $('syncDrawer').hidden = false;

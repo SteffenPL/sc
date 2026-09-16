@@ -384,7 +384,7 @@ class UiServerTests(unittest.TestCase):
             f'from = "{repos["vault"]}"\nto = "{repos["collab"]}"\n\n'
             '[[permissions]]\n'
             f'repo = "{repos["vault"]}"\npaths = ["**"]\nmaps = ["demo"]\n')
-        with patch.object(ui.cli, 'list_prs', return_value=[]):
+        with patch.object(ui, '_repo_prs', return_value=[]):
             status, payload = self.call('GET', '/api/status')
         self.assertEqual(status, 200)
         self.assertTrue(payload['ok'])

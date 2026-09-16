@@ -22,6 +22,7 @@ import sys
 import threading
 import traceback
 import tomllib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -202,8 +203,54 @@ def coverage(files, settings, repo):
     return result, sorted(sides)
 
 
+def _ls_remote_tips(repo, refs):
+    """{branch: short sha} for the wanted branch names — one ls-remote.
+    Missing branches (and unreachable repositories) map to None."""
+    if not refs:
+        return {}
+    args = ['git', 'ls-remote', engine.repo_url(repo)]
+    args += [f'refs/heads/{ref}' for ref in sorted(refs)]
+    try:
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'},
+                                 check=True, timeout=20)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return {ref: None for ref in refs}
+    tips = {}
+    for line in result.stdout.decode().splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[1].startswith('refs/heads/'):
+            tips[fields[1][len('refs/heads/'):]] = fields[0][:12]
+    return {ref: tips.get(ref) for ref in refs}
+
+
+def _repo_prs(repo):
+    """Open PRs of a repository, or None when gh fails."""
+    try:
+        result = subprocess.run(
+            ['gh', 'pr', 'list', '--repo', repo, '--state', 'open', '--limit', '1000',
+             '--json', 'url,number,title,headRefName'],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env={**os.environ, **engine.BOT}, check=True, timeout=30)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+    try:
+        return json.loads(result.stdout)
+    except ValueError:
+        return None
+
+
+def _repo_state(repo, refs):
+    return {'tips': _ls_remote_tips(repo, refs), 'prs': _repo_prs(repo)}
+
+
 def status_payload(path):
-    """A structured `sc status`: map tips, baselines, PRs, host state."""
+    """A structured `sc status`: map tips, baselines, PRs, host state.
+
+    One ls-remote per repository (tips and baselines together) and one gh
+    call per repository, all in parallel, so the report takes a round trip
+    instead of a round trip per map.
+    """
     payload = {'ok': True, 'config': str(path)}
     try:
         settings = config.load(path)
@@ -211,36 +258,43 @@ def status_payload(path):
         return {'ok': False, 'error': f'cannot read config: {error}'}
     payload['errors'] = config.validate(settings)
     specs = [] if payload['errors'] else config.resolve_maps(settings)
-    repos = sorted({spec['from']['repo'] for spec in specs} |
-                   {spec['to']['repo'] for spec in specs})
-    prs, prs_error = {}, None
-    try:
-        prs = {repo: cli.list_prs(repo) for repo in repos}
-    except (subprocess.CalledProcessError, OSError):
-        prs_error = 'gh unavailable — run `gh auth login`'
+    wanted = {}
+    for spec in specs:
+        wanted.setdefault(spec['from']['repo'], set()).update(
+            {spec['from']['branch'], f'sync-state/{spec["name"]}'})
+        wanted.setdefault(spec['to']['repo'], set()).add(spec['to']['branch'])
+    with ThreadPoolExecutor(max_workers=max(1, min(12, len(wanted) or 1))) as pool:
+        futures = {repo: pool.submit(_repo_state, repo, refs)
+                   for repo, refs in wanted.items()}
+        state = {repo: future.result() for repo, future in futures.items()}
+    prs_error = ('gh unavailable — run `gh auth login`'
+                 if any(info['prs'] is None for info in state.values()) else None)
     maps = []
     for spec in specs:
         source, target = spec['from'], spec['to']
-        baseline = cli._tip(engine.repo_url(source['repo']), f'sync-state/{spec["name"]}')
+        source_info = state.get(source['repo'], {'tips': {}, 'prs': None})
+        target_info = state.get(target['repo'], {'tips': {}, 'prs': None})
         reviews = {}
-        for side in (source, target):
-            found = [pr['number'] for pr in prs.get(side['repo'], [])
+        for side, info in ((source, source_info), (target, target_info)):
+            found = [pr['number'] for pr in (info['prs'] or [])
                      if str(pr.get('headRefName', '')).startswith(f'sync-review/{spec["name"]}/')]
             if found:
                 reviews[side['repo']] = found
         maps.append({'name': spec['name'],
                      'from': {'repo': source['repo'], 'branch': source['branch'],
                               'prefix': source['prefix'],
-                              'tip': cli._tip(engine.repo_url(source['repo']), source['branch'])},
+                              'tip': source_info['tips'].get(source['branch'])},
                      'to': {'repo': target['repo'], 'branch': target['branch'],
                             'prefix': target['prefix'],
-                            'tip': cli._tip(engine.repo_url(target['repo']), target['branch'])},
-                     'baseline': baseline, 'patterns': len(spec['patterns']),
+                            'tip': target_info['tips'].get(target['branch'])},
+                     'baseline': source_info['tips'].get(f'sync-state/{spec["name"]}'),
+                     'patterns': len(spec['patterns']),
                      'bi_directional': spec['bi_directional'], 'merge': spec['merge'],
                      'conflict': spec['conflict'], 'review_prs': reviews})
     payload['maps'], payload['prs_error'] = maps, prs_error
     payload['prs'] = {repo: [{'number': pr['number'], 'title': pr['title'], 'url': pr['url']}
-                             for pr in items] for repo, items in prs.items()}
+                             for pr in (info['prs'] or [])]
+                      for repo, info in state.items()}
     lock = None
     try:
         with (cli.state_dir() / 'sync.lock').open('w') as handle:
