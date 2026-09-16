@@ -9,7 +9,8 @@ sync both ways on `main`.
 - concurrent edits auto-merge; conflicts freeze with review PRs on both sides
 - plain TOML config; stdlib-only Python 3.11+; needs git + gh
 - `sc ui`: local web editor for maps and permissions, with a live vault
-  tree, gh repo picker and one-click git commits of the config
+  tree, gh repo picker, one-click git commits of the config and a toggle
+  that shows — and controls — the local `sc watch` loop
 - replaces [Copybara](https://github.com/google/copybara) for this use case:
   no Java/Bazel, no generated Starlark
 - one sync host — don't run two parallel sync services
@@ -17,7 +18,7 @@ sync both ways on `main`.
 ## Quick start
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.2
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.3
 sc init                       # writes an annotated sc.toml
 sc ui                         # edit maps + permissions in the browser
 sc doctor                     # verify prerequisites and config

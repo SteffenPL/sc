@@ -16,7 +16,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from sc import config, tomlio, ui  # noqa: E402
+from sc import cli, config, tomlio, ui  # noqa: E402
 
 
 def git(repo, *args):
@@ -420,6 +420,131 @@ class UiCliTests(unittest.TestCase):
         self.assertEqual(args.host, '127.0.0.1')
         args = parser.parse_args(['ui'])
         self.assertEqual(args.port, 8080)
+
+
+class WatchTests(unittest.TestCase):
+    """Watch-loop detection, start and stop, without network access."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.config = self.root / 'sharing.toml'
+        self.config.write_text(SAMPLE)
+        self.state = self.root / 'state' / 'sc'
+        env = patch.dict(os.environ, {'XDG_STATE_HOME': str(self.root / 'state')})
+        env.start()
+        self.addCleanup(env.stop)
+        self.ui = ui.UI(self.config)
+        self.record = self.state / 'watch.json'
+
+    def spawn(self, *args):
+        return subprocess.Popen(args, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+
+    def write_record(self, pid):
+        self.record.parent.mkdir(parents=True, exist_ok=True)
+        self.record.write_text(json.dumps({
+            'pid': pid, 'config': str(self.config.resolve()),
+            'started': '2026-09-16T00:00:00+00:00', 'from_ui': False}) + '\n')
+
+    def test_state_off_by_default(self):
+        self.assertEqual(cli.watch_state(self.config),
+                         {'running': False, 'pid': None, 'started': None,
+                          'from_ui': False})
+        self.assertEqual(self.ui.watch_info()['interval'], 900)
+
+    def test_state_follows_alive_record(self):
+        proc = self.spawn('sleep', '300')
+        self.addCleanup(proc.kill)
+        self.write_record(proc.pid)
+        state = cli.watch_state(self.config)
+        self.assertTrue(state['running'])
+        self.assertEqual(state['pid'], proc.pid)
+        proc.kill()
+        proc.wait()
+        self.assertFalse(cli.watch_state(self.config)['running'])
+
+    def test_state_scans_proc_for_external_watch(self):
+        proc = self.spawn(sys.executable, '-c', 'import time; time.sleep(300)',
+                          'watch', '--config', str(self.config.resolve()))
+        try:
+            state = cli.watch_state(self.config)
+            self.assertTrue(state['running'])
+            self.assertEqual(state['pid'], proc.pid)
+        finally:
+            proc.kill()
+            proc.wait()
+        self.assertFalse(cli.watch_state(self.config)['running'])
+
+    def test_watch_start_is_idempotent(self):
+        proc = self.spawn('sleep', '300')
+        self.addCleanup(proc.kill)
+        self.write_record(proc.pid)
+        with patch.object(ui.subprocess, 'Popen') as popen:
+            result = self.ui.watch_start()
+        self.assertTrue(result['running'])
+        self.assertTrue(result['already'])
+        popen.assert_not_called()
+
+    def test_watch_start_spawns_and_reports_quick_exit(self):
+        with patch.object(ui.subprocess, 'Popen') as popen:
+            popen.return_value.poll.return_value = 1
+            with self.assertRaises(ui.UIError):
+                self.ui.watch_start(wait=0.3)
+        args = popen.call_args[0][0]
+        self.assertIn('watch', args)
+        self.assertIn(str(self.config), args)
+        self.assertEqual(popen.call_args[1]['env']['SC_WATCH_FROM_UI'], '1')
+        self.assertTrue(popen.call_args[1]['start_new_session'])
+
+    def test_watch_stop_signals_the_loop(self):
+        proc = self.spawn('sleep', '300')
+        self.write_record(proc.pid)
+        self.assertTrue(cli.watch_state(self.config)['running'])
+        result = self.ui.watch_stop()
+        self.assertFalse(result['running'])
+        proc.wait(timeout=10)
+        self.assertEqual(self.ui.watch_stop()['running'], False)
+
+    def test_watch_endpoint_roundtrip(self):
+        server = ThreadingHTTPServer(('127.0.0.1', 0), ui.Handler)
+        ui.Handler.ui = self.ui
+        port = server.server_address[1]
+        self.ui.allowed_hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
+        self.ui.suffix_check = None
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        base = f'http://127.0.0.1:{port}'
+
+        def call(method, path, body=None):
+            data = json.dumps(body).encode() if body is not None else None
+            request = urllib.request.Request(base + path, data=data, method=method)
+            if data is not None:
+                request.add_header('Content-Type', 'application/json')
+                request.add_header('X-SC-Token', self.ui.token)
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return response.status, json.loads(response.read())
+
+        status, payload = call('GET', '/api/watch')
+        self.assertEqual(status, 200)
+        self.assertFalse(payload['running'])
+        self.assertEqual(payload['interval'], 900)
+        proc = self.spawn('sleep', '300')
+        self.addCleanup(proc.kill)
+        self.write_record(proc.pid)
+        status, payload = call('GET', '/api/watch')
+        self.assertTrue(payload['running'])
+        status, payload = call('POST', '/api/watch', {'action': 'start'})
+        self.assertTrue(payload['running'] and payload['already'])
+        status, payload = call('POST', '/api/watch', {'action': 'stop'})
+        self.assertFalse(payload['running'])
+        proc.wait(timeout=10)
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            call('POST', '/api/watch', {'action': 'nope'})
+        self.assertEqual(raised.exception.code, 400)
 
 
 if __name__ == '__main__':

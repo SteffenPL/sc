@@ -17,9 +17,11 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 import threading
+import time
 import traceback
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
@@ -34,6 +36,7 @@ from sc import __version__, cli, config, engine, tomlio
 REPO = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 BRANCH = re.compile(r'^[^\s~^:?*[\x00-\x1f]+$')
 SYNC_SNIPPET = 'import sys\nfrom sc.cli import main\nsys.exit(main(sys.argv[1:]))'
+WATCH_SNIPPET = SYNC_SNIPPET
 BODY_LIMIT = 5 * 1024 * 1024
 
 
@@ -292,6 +295,7 @@ def status_payload(path):
                      'bi_directional': spec['bi_directional'], 'merge': spec['merge'],
                      'conflict': spec['conflict'], 'review_prs': reviews})
     payload['maps'], payload['prs_error'] = maps, prs_error
+    payload['watch'] = cli.watch_state(path)
     payload['prs'] = {repo: [{'number': pr['number'], 'title': pr['title'], 'url': pr['url']}
                              for pr in (info['prs'] or [])]
                       for repo, info in state.items()}
@@ -320,6 +324,67 @@ class UI:
         self.token = secrets.token_urlsafe(12)
         self.job = None
         self.job_lock = threading.Lock()
+        self.watch_proc = None
+
+    def watch_interval(self):
+        try:
+            settings = config.load(self.path)
+            return settings.get('sync', {}).get('interval', 900)
+        except (OSError, ValueError):
+            return 900
+
+    def watch_info(self):
+        return {**cli.watch_state(self.path), 'interval': self.watch_interval()}
+
+    def watch_start(self, wait=10.0):
+        """Start a detached `sc watch` for this config; returns its state."""
+        state = cli.watch_state(self.path)
+        if state['running']:
+            return {**state, 'already': True}
+        log = cli.state_dir() / 'watch.log'
+        with log.open('ab') as handle:
+            self.watch_proc = subprocess.Popen(
+                [sys.executable, '-c', WATCH_SNIPPET, 'watch', '--config', str(self.path)],
+                stdout=handle, stderr=subprocess.STDOUT, cwd=str(self.path.parent),
+                start_new_session=True, env={**os.environ, 'SC_WATCH_FROM_UI': '1'})
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            state = cli.watch_state(self.path)
+            if state['running']:
+                return state
+            if self.watch_proc.poll() is not None:
+                break
+            time.sleep(0.25)
+        state = cli.watch_state(self.path)
+        if state['running']:
+            return state
+        detail = ''
+        try:
+            with log.open('rb') as handle:
+                handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, handle.tell() - 1500))
+                detail = handle.read().decode(errors='replace').strip()
+        except OSError:
+            pass
+        raise UIError(500, 'the watch loop exited immediately' +
+                      (f': {detail}' if detail else ''))
+
+    def watch_stop(self, wait=15.0):
+        """SIGINT the running watch loop; returns its state afterwards."""
+        state = cli.watch_state(self.path)
+        if not state['running']:
+            return state
+        try:
+            os.kill(state['pid'], signal.SIGINT)
+        except OSError as error:
+            raise UIError(500, f'cannot signal the watch process: {error}') from None
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            state = cli.watch_state(self.path)
+            if not state['running']:
+                return state
+            time.sleep(0.25)
+        raise UIError(504, 'the watch loop keeps running — it may be mid-sync; try again')
 
     def sync_status(self):
         job = self.job
@@ -436,6 +501,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, status_payload(self.ui.path))
             if route.path == '/api/sync':
                 return self._json(200, self.ui.sync_status())
+            if route.path == '/api/watch':
+                return self._json(200, self.ui.watch_info())
             raise UIError(404, 'not found')
         except UIError as error:
             self._json(error.status, {'ok': False, 'error': error.message})
@@ -460,6 +527,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_save(body)
             if route.path == '/api/sync':
                 return self._json(200, self.ui.start_sync())
+            if route.path == '/api/watch':
+                action = body.get('action')
+                if action == 'start':
+                    return self._json(200, {**self.ui.watch_start(), 'ok': True})
+                if action == 'stop':
+                    return self._json(200, {**self.ui.watch_stop(), 'ok': True})
+                raise UIError(400, "action must be 'start' or 'stop'")
             raise UIError(404, 'not found')
         except UIError as error:
             self._json(error.status, {'ok': False, 'error': error.message})
@@ -481,7 +555,8 @@ class Handler(BaseHTTPRequestHandler):
         text = path.read_text()
         payload = {'ok': True, 'version': __version__, 'token': self.ui.token,
                    'config_path': str(path), 'file_version': _sha(text),
-                   'git': git_info(path), 'model': model_of(text)}
+                   'git': git_info(path), 'model': model_of(text),
+                   'watch': self.ui.watch_info()}
         return self._json(200, payload)
 
     def api_repos(self, query):

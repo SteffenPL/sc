@@ -50,6 +50,61 @@ def list_prs(repo):
                                  '--limit', '1000', '--json', 'url,number,title,headRefName'))
 
 
+def _alive(pid):
+    """Whether a process is really running; zombies (unreaped children)
+    count as gone — os.kill(pid, 0) alone would still see them."""
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, TypeError):
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    try:
+        status = Path(f'/proc/{pid}/stat').read_text()
+        return status.split(') ', 1)[1].split(' ', 1)[0] != 'Z'
+    except (OSError, IndexError):
+        return True
+
+
+def watch_record():
+    """The watch.json announcement of a running watch loop, or None."""
+    try:
+        return json.loads((state_dir() / 'watch.json').read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def watch_state(config):
+    """Whether a watch loop is serving this config: (running, pid, started).
+
+    Trusts watch.json while its process is alive; otherwise scans /proc
+    for a live 'watch' command naming this config, which also catches
+    watch loops started before the announcement file existed (or by hand).
+    """
+    config = str(Path(config).resolve())
+    record = watch_record()
+    if (isinstance(record, dict) and _alive(record.get('pid')) and
+            str(record.get('config')) == config):
+        return {'running': True, 'pid': record['pid'],
+                'started': record.get('started'),
+                'from_ui': bool(record.get('from_ui'))}
+    if Path('/proc').is_dir():
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit() or int(entry) == os.getpid():
+                continue
+            try:
+                elements = Path(f'/proc/{entry}/cmdline').read_bytes().decode(
+                    errors='replace').split('\0')
+            except OSError:
+                continue
+            if 'watch' in elements and config in elements:
+                return {'running': True, 'pid': int(entry), 'started': None,
+                        'from_ui': False}
+    return {'running': False, 'pid': None, 'started': None, 'from_ui': False}
+
+
 def run_sync(config_path, initialize=False, dry_run=False):
     """Sync every configured map under the host lock. True on failure."""
     specs = load_specs(config_path)
@@ -152,6 +207,10 @@ def cmd_watch(args):
         print('Interval must be at least 60 seconds.', file=sys.stderr)
         return 2
     print(f'Watching {path} — sync every {interval}s, Ctrl+C stops.')
+    (state_dir() / 'watch.json').write_text(json.dumps({
+        'pid': os.getpid(), 'config': str(Path(path).resolve()),
+        'started': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'from_ui': os.environ.get('SC_WATCH_FROM_UI') == '1'}) + '\n')
     try:
         while True:
             stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -160,6 +219,11 @@ def cmd_watch(args):
             time.sleep(interval)
     except KeyboardInterrupt:
         print('Stopped.')
+    finally:
+        try:
+            (state_dir() / 'watch.json').unlink()
+        except OSError:
+            pass
     return 0
 
 
@@ -223,6 +287,8 @@ def cmd_status(args):
                 _row('Lock', 'held (a sync is running)')
     except OSError as error:
         _row('Lock', f'unknown ({error})')
+    watch = watch_state(path)
+    _row('Watch', f'running (pid {watch["pid"]})' if watch['running'] else 'off')
     record_file = directory / 'last-run.json'
     if record_file.is_file():
         try:
