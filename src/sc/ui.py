@@ -490,10 +490,6 @@ class Handler(BaseHTTPRequestHandler):
             if route.path == '/':
                 return self._page(
                     (files('sc') / 'templates' / 'ui.html').read_text())
-            if route.path == '/vendor/force-graph.min.js':
-                return self._asset('application/javascript; charset=utf-8',
-                    (files('sc') / 'templates' / 'vendor' /
-                     'force-graph.min.js').read_bytes())
             if route.path == '/favicon.ico':
                 self.send_response(204)
                 self.send_header('Content-Length', '0')

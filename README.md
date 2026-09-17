@@ -10,8 +10,8 @@ sync both ways on `main`.
 - plain TOML config; stdlib-only Python 3.11+; needs git + gh
 - `sc ui`: local web editor for maps and permissions, with a live vault
   tree, gh repo picker, one-click git commits of the config, a toggle
-  that shows — and controls — the local `sc watch` loop, and a force-graph
-  view of the repositories and their mappings
+  that shows — and controls — the local `sc watch` loop, and an interactive
+  d3 force graph of the repositories and their mappings
 - replaces [Copybara](https://github.com/google/copybara) for this use case:
   no Java/Bazel, no generated Starlark
 - one sync host — don't run two parallel sync services
@@ -19,7 +19,7 @@ sync both ways on `main`.
 ## Quick start
 
 ```sh
-uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.5
+uv tool install git+https://github.com/SteffenPL/sc.git@v0.4.6
 sc init                       # writes an annotated sc.toml
 sc ui                         # edit maps + permissions in the browser
 sc doctor                     # verify prerequisites and config

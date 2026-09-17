@@ -187,12 +187,10 @@ dialog .row{display:flex;justify-content:flex-end;margin-top:12px}
 .graphwrap{position:relative;height:62vh;min-height:420px;border-radius:12px;
   background:var(--card);overflow:hidden;touch-action:none;
   box-shadow:inset 0 0 0 1px var(--line)}
-#graphMount{width:100%;height:100%}
-.graphwrap canvas{display:block}
-.graph-tooltip{background:var(--card)!important;border:none!important;
-  border-radius:10px!important;padding:7px 11px!important;
-  font:12px/1.5 var(--font)!important;color:var(--ink)!important;
-  box-shadow:0 10px 30px rgba(20,20,20,.22)!important}
+#graphCanvas{width:100%;height:100%;display:block;cursor:grab}
+#graphTip{position:fixed;z-index:50;background:var(--card);
+  border-radius:10px;padding:7px 11px;font-size:12px;pointer-events:none;
+  box-shadow:0 10px 30px rgba(20,20,20,.2);max-width:340px;display:none}
 .graphEmpty{position:absolute;top:14px;left:16px}
 .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--dim);
   align-items:center;margin:2px 0 12px}
@@ -302,10 +300,10 @@ tr.staged td,.entry.staged{background:#fffaf0;box-shadow:inset 4px 0 0 #d9a03f}
         <span><span class="dot" style="background:var(--accentbg);border:1.5px solid var(--accent)"></span>source side (from)</span>
         <span><span class="dot" style="background:#fff;border:1.5px solid #98a0ab"></span>collaborator side (to)</span>
         <span><span class="sw" style="border-color:#98a0ab"></span>no permission granted yet</span>
-        <span>plain line = two-way · arrow = one-way · drag to arrange · pinch/wheel zooms · click for details</span>
+        <span>double arrow = two-way · single arrow = one-way · drag to arrange · wheel/pinch zooms · click for details</span>
       </div>
       <div class="graphwrap" id="graphwrap">
-        <div id="graphMount"></div>
+        <canvas id="graphCanvas"></canvas>
         <div class="card detail" id="graphDetail" hidden></div>
         <div class="hint graphEmpty" id="graphEmpty" hidden></div>
       </div>
@@ -336,7 +334,7 @@ tr.staged td,.entry.staged{background:#fffaf0;box-shadow:inset 4px 0 0 #d9a03f}
   <div class="row"><button class="ghost" onclick="document.getElementById('diffDialog').close()">Close</button></div>
 </dialog>
 <div id="toasts"></div>
-<script src="/vendor/force-graph.min.js"></script>
+<div id="graphTip"></div>
 <script>
 'use strict';
 const S = {
@@ -944,8 +942,20 @@ function permForm(index) {
   };
 }
 
-let fg = null;
+let d3 = null;
 let graph = null;
+let sim = null;
+let zoomer = null;
+
+async function loadD3() {
+  if (d3) return d3;
+  try {
+    d3 = await import('https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm');
+  } catch (e) {
+    d3 = false;
+  }
+  return d3;
+}
 
 function patternsForMap(name) {
   const out = [];
@@ -959,12 +969,17 @@ function graphSignature() {
   return JSON.stringify([S.model.maps, S.model.permissions]);
 }
 
+function nodeRadius(node) {
+  return 15 + Math.min(8, node.degree * 2);
+}
+
 function buildGraph(previous) {
   const nodes = new Map();
   const place = (id) => {
     const old = previous ? previous.nodeById.get(id) : null;
     if (old) {
       old.from_side = false; old.to_side = false; old.degree = 0;
+      old.fx = old.fy = null;
       nodes.set(id, old);
       return old;
     }
@@ -997,115 +1012,254 @@ function buildGraph(previous) {
   for (const list of groups.values())
     list.forEach((link, i) => {
       link.curve = list.length === 1 ? 0 : (i - (list.length - 1) / 2) * 0.22;
+      link.loop = link.from === link.to;
     });
   return {nodes: [...nodes.values()], links, nodeById: nodes};
 }
 
-function ensureGraphInstance() {
-  if (fg || typeof ForceGraph === 'undefined') return fg;
-  const mount = $('graphMount');
-  fg = ForceGraph()(mount)
-    .width(mount.clientWidth).height(mount.clientHeight)
-    .backgroundColor('rgba(0,0,0,0)')
-    .nodeId('id')
-    .nodeVal((d) => 1 + d.degree * 0.3)
-    .nodeLabel((d) => d.id)
-    .linkLabel((l) => `map ${l.map} · ${l.bi ? 'two-way' : 'one-way'} · merge ${l.merge}` +
-               (l.patterns.length ? '' : ' · no permission granted yet'))
-    .nodeCanvasObject(paintGraphNode)
-    .nodeCanvasObjectMode(() => 'replace')
-    .linkColor((l) => l.patterns.length ? mapColor(l.map) : '#b6bcc6')
-    .linkWidth(() => 1.8)
-    .linkLineDash((l) => l.patterns.length ? [] : [5, 4])
-    .linkCurvature((l) => l.curve)
-    .linkDirectionalArrowLength((l) => l.bi ? 0 : 7)
-    .linkDirectionalArrowRelPos(1)
-    .linkDirectionalArrowColor((l) => l.patterns.length ? mapColor(l.map) : '#b6bcc6')
-    .linkCanvasObject(paintGraphLink)
-    .linkCanvasObjectMode(() => 'after')
-    .onNodeClick((n) => { if (!graph) return; graph.selected = {node: n}; renderGraphDetail(); })
-    .onLinkClick((l) => { if (!graph) return; graph.selected = {edge: l}; renderGraphDetail(); })
-    .onBackgroundClick(() => { if (!graph) return; graph.selected = null; renderGraphDetail(); })
-    .onEngineTick(() => { if (graph) graph.settled = false; })
-    .onEngineStop(() => {
+function ensureZoomAndSimulation() {
+  const canvas = $('graphCanvas');
+  zoomer = d3.zoom()
+    .scaleExtent([0.15, 4])
+    .on('zoom', (event) => {
+      graph.view = {k: event.transform.k, x: event.transform.x, y: event.transform.y};
+    });
+  d3.select(canvas).call(zoomer).on('dblclick.zoom', null);
+  sim = d3.forceSimulation(graph.nodes)
+    .force('link', d3.forceLink(graph.links)
+      .distance((l) => l.curve ? 195 : 160).strength(0.7))
+    .force('charge', d3.forceManyBody().strength(-320))
+    .force('collide', d3.forceCollide().radius((d) => nodeRadius(d) + 8))
+    .force('cx', d3.forceX(0).strength(0.045))
+    .force('cy', d3.forceY(0).strength(0.045))
+    .alphaDecay(0.028)
+    .velocityDecay(0.32)
+    .on('end', () => {
       if (!graph) return;
-      if (Date.now() - graph.startedAt < 3500) { graph.settled = false; return; }
       graph.settled = true;
-      if (!S.graphFitted) { fg.zoomToFit(400, 50); S.graphFitted = true; }
-    })
-    .minZoom(0.15).maxZoom(4)
-    .cooldownTime(4000);
-  fg.d3Force('charge').strength(-320);
-  fg.d3Force('link').distance((l) => l.curve ? 200 : 165);
-  return fg;
+      if (!S.graphFitted) { fitGraph(true); S.graphFitted = true; }
+    });
 }
 
-function paintGraphNode(node, ctx, globalScale) {
-  const r = 15 + Math.min(8, node.degree * 2);
-  const selected = graph && graph.selected && graph.selected.node === node;
-  ctx.beginPath();
-  ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = node.from_side && !node.to_side ? '#faecec' : '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = selected ? 4 : 2.5;
-  ctx.strokeStyle = node.from_side && !node.to_side ? '#911515' : '#98a0ab';
-  ctx.stroke();
-  const fontSize = 12.5 / globalScale;
-  ctx.font = `600 ${fontSize}px Ubuntu, system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#141414';
-  ctx.fillText(node.label, node.x, node.y + r + 4 / globalScale);
-}
-
-function paintGraphLink(link, ctx, globalScale) {
-  const a = link.source, b = link.target;
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return;
-  const cp = link.__controlPoints ? link.__controlPoints[0] : null;
-  const mx = cp ? 0.25 * a.x + 0.5 * cp.x + 0.25 * b.x : (a.x + b.x) / 2;
-  const my = cp ? 0.25 * a.y + 0.5 * cp.y + 0.25 * b.y : (a.y + b.y) / 2;
-  const fontSize = 11.5 / globalScale;
-  const pad = 3 / globalScale;
-  ctx.font = `${fontSize}px Ubuntu Mono, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const text = ctx.measureText(link.map);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(mx - text.width / 2 - pad, my - fontSize * 0.8 - pad,
-               text.width + pad * 2, fontSize * 1.6 + pad * 2);
-  ctx.fillStyle = link.patterns.length ? '#333a45' : '#8892a0';
-  ctx.fillText(link.map, mx, my);
-}
-
-function renderGraph() {
-  const mount = $('graphMount');
+async function renderGraph() {
+  const canvas = $('graphCanvas');
   const empty = $('graphEmpty');
   if (!S.model.maps.length) {
     graph = null;
     $('graphDetail').hidden = true;
-    if (fg) fg.graphData({nodes: [], links: []});
+    $('graphTip').style.display = 'none';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     empty.hidden = false;
     empty.textContent = 'No maps yet — add one in the Maps tab.';
     return;
   }
-  if (typeof ForceGraph === 'undefined') {
+  if (!d3) {
     empty.hidden = false;
-    empty.textContent = 'The graph library is unavailable — reinstall sc.';
-    return;
+    empty.textContent = 'Loading d3 from the CDN…';
+    if (!(await loadD3())) {
+      empty.textContent = 'Could not load d3 — reconnect to the internet and reload.';
+      return;
+    }
+    empty.hidden = true;
   }
   const sig = graphSignature();
-  if (graph && graph.sig === sig) return;
-  ensureGraphInstance();
-  const built = buildGraph(graph);
-  const selected = graph && graph.selected && graph.selected.node
-    ? {node: built.nodeById.get(graph.selected.node.id) || graph.selected.node} : null;
-  graph = {sig, nodes: built.nodes, links: built.links, nodeById: built.nodeById,
-           selected, settled: false, startedAt: Date.now()};
-  fg.width(mount.clientWidth).height(mount.clientHeight);
-  fg.graphData({nodes: graph.nodes, links: graph.links});
-  fg.d3ReheatSimulation();
+  if (!graph || graph.sig !== sig) {
+    const built = buildGraph(graph);
+    const view = graph ? graph.view
+      : {k: 1, x: canvas.clientWidth / 2, y: canvas.clientHeight / 2};
+    const selected = graph && graph.selected && graph.selected.node
+      ? {node: built.nodeById.get(graph.selected.node.id) || graph.selected.node} : null;
+    graph = {sig, nodes: built.nodes, links: built.links, nodeById: built.nodeById,
+             view, selected, settled: false};
+    if (!sim) {
+      ensureZoomAndSimulation();
+    } else {
+      sim.nodes(graph.nodes);
+      sim.force('link').links(graph.links);
+      sim.alpha(0.8).restart();
+    }
+  }
   renderGraphDetail();
+  if (!graphRaf) graphRaf = requestAnimationFrame(tickGraph);
 }
+
+function toWorld(event) {
+  const canvas = $('graphCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const mx = event.clientX - rect.left, my = event.clientY - rect.top;
+  return {x: (mx - graph.view.x) / graph.view.k,
+          y: (my - graph.view.y) / graph.view.k, mx, my};
+}
+
+let graphRaf = 0;
+
+function tickGraph() {
+  graphRaf = 0;
+  if (S.tab !== 'graph' || !graph) return;
+  drawGraph();
+  graphRaf = requestAnimationFrame(tickGraph);
+}
+
+function drawGraph() {
+  const canvas = $('graphCanvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!graph.view) return;
+  ctx.setTransform(dpr * graph.view.k, 0, 0, dpr * graph.view.k,
+                   dpr * graph.view.x, dpr * graph.view.y);
+  const fade = graph.selected ? 0.22 : 1;
+  const involved = (item) => {
+    if (!graph.selected) return true;
+    const sel = graph.selected;
+    if (sel.node) return sel.node === item.from || sel.node === item.to ||
+                       (sel.node === item);
+    return sel.edge === item || sel.edge.from === item || sel.edge.to === item;
+  };
+  for (const edge of graph.links) {
+    const dim = involved(edge) ? 1 : fade;
+    const color = edge.patterns.length ? mapColor(edge.map) : '#b6bcc6';
+    ctx.globalAlpha = dim;
+    if (edge.loop) { drawLoop(edge, ctx, color); continue; }
+    const g = edgeGeometry(edge);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = (graph.selected && graph.selected.edge === edge) ? 3.2 : 1.8;
+    if (!edge.patterns.length) ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(g.a.x, g.a.y);
+    ctx.quadraticCurveTo(g.cx, g.cy, g.b.x, g.b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    arrowHead(ctx, g.b.x, g.b.y, g.cx, g.cy, color, nodeRadius(edge.from) + 3);
+    if (edge.bi) arrowHead(ctx, g.a.x, g.a.y, g.cx, g.cy, color,
+                           nodeRadius(edge.to) + 3);
+    const lx = 0.25 * g.a.x + 0.5 * g.cx + 0.25 * g.b.x;
+    const ly = 0.25 * g.a.y + 0.5 * g.cy + 0.25 * g.b.y;
+    ctx.font = '11.5px Ubuntu Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const text = ctx.measureText(edge.map);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(lx - text.width / 2 - 4, ly - 8, text.width + 8, 16);
+    ctx.fillStyle = edge.patterns.length ? '#333a45' : '#8892a0';
+    ctx.fillText(edge.map, lx, ly);
+    ctx.globalAlpha = 1;
+  }
+  for (const node of graph.nodes) {
+    const dim = involved(node) ? 1 : fade;
+    ctx.globalAlpha = dim;
+    const r = nodeRadius(node);
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = node.from_side && !node.to_side ? '#faecec' : '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = (graph.selected && graph.selected.node === node) ? 4 : 2.5;
+    ctx.strokeStyle = node.from_side && !node.to_side ? '#911515' : '#98a0ab';
+    ctx.stroke();
+    ctx.font = '600 12.5px Ubuntu, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#141414';
+    ctx.fillText(node.label, node.x, node.y + r + 4);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function edgeGeometry(edge) {
+  if (edge.loop) return null;
+  const a = edge.from, b = edge.to;
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const d = Math.max(1, Math.hypot(dx, dy));
+  const offset = edge.curve * d;
+  return {a, b, cx: mx - (dy / d) * offset, cy: my + (dx / d) * offset};
+}
+
+function drawLoop(edge, ctx, color) {
+  const n = edge.from, loopIndex = edge.curve || 0;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  if (!edge.patterns.length) ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.arc(n.x, n.y, 34, loopIndex - 0.5, loopIndex + 4.5);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function arrowHead(ctx, x, y, fromX, fromY, color, trim) {
+  let dx = x - fromX, dy = y - fromY;
+  const d = Math.hypot(dx, dy) || 1;
+  dx /= d; dy /= d;
+  const tx = x - dx * trim, ty = y - dy * trim;
+  const size = 7 / graph.view.k;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(tx + dx * size, ty + dy * size);
+  ctx.lineTo(tx - dy * size * 0.55 - dx * size * 0.4, ty + dx * size * 0.55 - dy * size * 0.4);
+  ctx.lineTo(tx + dy * size * 0.55 - dx * size * 0.4, ty - dx * size * 0.55 - dy * size * 0.4);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function fitGraph(animated) {
+  if (!graph || !graph.nodes.length || !zoomer || !d3) return;
+  const canvas = $('graphCanvas');
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const node of graph.nodes) {
+    const r = nodeRadius(node) + 70;
+    minX = Math.min(minX, node.x - r); maxX = Math.max(maxX, node.x + r);
+    minY = Math.min(minY, node.y - r); maxY = Math.max(maxY, node.y + r);
+  }
+  const k = Math.max(0.15, Math.min(4, Math.min(
+    w / Math.max(1, maxX - minX), h / Math.max(1, maxY - minY))));
+  const t = d3.zoomIdentity
+    .translate(w / 2 - k * (minX + maxX) / 2, h / 2 - k * (minY + maxY) / 2)
+    .scale(k);
+  const selection = d3.select(canvas);
+  if (animated) selection.transition().duration(450).call(zoomer.transform, t);
+  else zoomer.transform(selection, t);
+}
+
+function graphHit(wx, wy) {
+  for (let i = graph.nodes.length - 1; i >= 0; i--) {
+    const node = graph.nodes[i];
+    const r = nodeRadius(node) + 6 / graph.view.k;
+    if ((wx - node.x) ** 2 + (wy - node.y) ** 2 < r * r) return {node};
+  }
+  for (const edge of graph.links) {
+    if (edge.loop) continue;
+    const g = edgeGeometry(edge);
+    for (let t = 0.05; t <= 0.951; t += 0.05) {
+      const x = (1 - t) ** 2 * g.a.x + 2 * (1 - t) * t * g.cx + t ** 2 * g.b.x;
+      const y = (1 - t) ** 2 * g.a.y + 2 * (1 - t) * t * g.cy + t ** 2 * g.b.y;
+      if ((wx - x) ** 2 + (wy - y) ** 2 < 36) return {edge};
+    }
+  }
+  return null;
+}
+
+function graphTooltip(hit, event) {
+  const tip = $('graphTip');
+  if (!hit) { tip.style.display = 'none'; return; }
+  tip.style.display = 'block';
+  tip.style.left = Math.min(event.clientX + 14, window.innerWidth - 360) + 'px';
+  tip.style.top = (event.clientY + 16) + 'px';
+  tip.innerHTML = hit.node
+    ? `<b>${esc(hit.node.id)}</b>`
+    : `<b>map ${esc(hit.edge.map)}</b> · ${hit.edge.bi ? 'two-way' : 'one-way'}` +
+      ` · merge ${esc(hit.edge.merge)} · conflict ${esc(hit.edge.conflict)}` +
+      (hit.edge.patterns.length ? '' : ' · <i>no permission granted yet</i>');
+}
+
 
 function renderGraphDetail() {
   const box = $('graphDetail');
@@ -1265,9 +1419,9 @@ $('syncClose').onclick = () => { $('syncDrawer').hidden = true; };
 $('watchOn').onchange = toggleWatch;
 setInterval(pollWatch, 5000);
 pollWatch();
-$('graphFit').onclick = () => { if (fg) fg.zoomToFit(400, 50); };
+$('graphFit').onclick = () => fitGraph(true);
 $('graphRelayout').onclick = () => {
-  if (!graph || !fg) return;
+  if (!graph || !sim) return;
   for (const node of graph.nodes) {
     const angle = Math.random() * Math.PI * 2;
     node.fx = null;
@@ -1275,13 +1429,67 @@ $('graphRelayout').onclick = () => {
     node.x = 260 * Math.cos(angle);
     node.y = 260 * Math.sin(angle);
   }
-  fg.d3ReheatSimulation();
+  graph.settled = false;
+  sim.alpha(1).restart();
 };
-new ResizeObserver(() => {
-  if (!fg) return;
-  const mount = $('graphMount');
-  fg.width(mount.clientWidth).height(mount.clientHeight);
-}).observe($('graphwrap'));
+const graphCanvas = $('graphCanvas');
+let graphGesture = null;
+graphCanvas.addEventListener('pointerdown', (event) => {
+  if (!graph || !d3) return;
+  const world = toWorld(event);
+  const hit = graphHit(world.x, world.y);
+  graphGesture = {hit, moved: false, sx: world.mx, sy: world.my};
+  if (hit && hit.node) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    graph.drag = {node: hit.node};
+    graph.settled = false;
+    sim.alphaTarget(0.25).restart();
+    graph.drag.node.fx = world.x;
+    graph.drag.node.fy = world.y;
+  }
+});
+graphCanvas.addEventListener('pointermove', (event) => {
+  if (!graph) return;
+  const world = toWorld(event);
+  if (graphGesture && Math.hypot(world.mx - graphGesture.sx, world.my - graphGesture.sy) > 4)
+    graphGesture.moved = true;
+  if (graph.drag) {
+    graph.drag.node.fx = world.x;
+    graph.drag.node.fy = world.y;
+    return;
+  }
+  if (!graphGesture) {
+    const hit = graphHit(world.x, world.y);
+    graphCanvas.style.cursor = hit ? 'pointer' : 'grab';
+    graphTooltip(hit, event);
+  }
+});
+graphCanvas.addEventListener('pointerup', () => {
+  if (!graph) return;
+  if (graph.drag) {
+    graph.drag.node.fx = null;
+    graph.drag.node.fy = null;
+    sim.alphaTarget(0);
+  }
+  if (graphGesture && !graphGesture.moved) {
+    graph.selected = graphGesture.hit;
+    renderGraphDetail();
+  }
+  graph.drag = null;
+  graphGesture = null;
+  drawGraph();
+});
+graphCanvas.addEventListener('pointerleave', () => {
+  $('graphTip').style.display = 'none';
+});
+graphCanvas.addEventListener('touchstart', (event) => {
+  if (!graph || !d3 || event.touches.length > 1) return;
+  const world = toWorld(event.touches[0]);
+  const hit = graphHit(world.x, world.y);
+  if (hit && hit.node) event.stopImmediatePropagation();
+}, {passive: true});
+loadD3();
 window.addEventListener('beforeunload', (e) => {
   if (S.pending.length) { e.preventDefault(); e.returnValue = ''; }
 });
